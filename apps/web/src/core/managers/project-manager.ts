@@ -108,6 +108,7 @@ export class ProjectManager {
 		this.active = newProject;
 		this.notify();
 
+		this.editor.command.clear();
 		this.editor.media.clearAllAssets();
 		this.editor.scenes.initializeScenes({
 			scenes: newProject.scenes,
@@ -133,6 +134,9 @@ export class ProjectManager {
 
 		this.editor.save.pause();
 		await this.ensureStorageMigrations();
+		// Undo entries hold the previous project's tracks; replaying them here
+		// would write them into this project.
+		this.editor.command.clear();
 		this.editor.media.clearAllAssets();
 		this.editor.scenes.clearScenes();
 
@@ -297,6 +301,7 @@ export class ProjectManager {
 
 			if (shouldClearActive) {
 				this.active = null;
+				this.editor.command.clear();
 				this.editor.media.clearAllAssets();
 				this.editor.scenes.clearScenes();
 			}
@@ -311,6 +316,7 @@ export class ProjectManager {
 		this.active = null;
 		this.notify();
 
+		this.editor.command.clear();
 		this.editor.media.clearAllAssets();
 		this.editor.scenes.clearScenes();
 	}

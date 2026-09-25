@@ -10,7 +10,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { FPS_PRESETS } from "@/fps/presets";
-import { floatToFrameRate, frameRateToFloat } from "@/fps/utils";
+import {
+	floatToFrameRate,
+	frameRatesEqual,
+	frameRateToFloat,
+} from "@/fps/utils";
+import type { FrameRate } from "opencut-wasm";
 import { useEditor } from "@/editor/use-editor";
 import {
 	Section,
@@ -57,6 +62,24 @@ function areCanvasSizesEqual({
 
 function formatCanvasDimension({ value }: { value: number }) {
 	return formatNumberForDisplay({ value, maxFractionDigits: 0 });
+}
+
+/**
+ * Select value for the project frame rate: the matching preset (exact rational,
+ * so 29.97 is not shown as 30), else the rate itself to three decimals.
+ */
+function getFrameRateSelectValue({ fps }: { fps: FrameRate }): {
+	value: string;
+	isPreset: boolean;
+} {
+	const preset = FPS_PRESETS.find((candidate) =>
+		frameRatesEqual({ a: floatToFrameRate(parseFloat(candidate.value)), b: fps }),
+	);
+	if (preset) return { value: preset.value, isPreset: true };
+	return {
+		value: String(Math.round(frameRateToFloat(fps) * 1_000) / 1_000),
+		isPreset: false,
+	};
 }
 
 function parseCanvasDimension({ input }: { input: string }): number | null {
@@ -207,6 +230,9 @@ export function SettingsView() {
 	});
 
 	const isCustomSelected = canvasSizeMode === "custom";
+	const frameRateSelect = getFrameRateSelectValue({
+		fps: activeProject.settings.fps,
+	});
 
 	return (
 		<PanelView
@@ -242,7 +268,7 @@ export function SettingsView() {
 						<SectionHeader className="justify-between">
 							<SectionTitle className="flex-1">Frame rate</SectionTitle>
 					<Select
-							value={String(Math.round(frameRateToFloat(activeProject.settings.fps)))}
+							value={frameRateSelect.value}
 							onValueChange={(value) => {
 								const fps = floatToFrameRate(parseFloat(value));
 								editor.project.updateSettings({ settings: { fps } });
@@ -257,6 +283,11 @@ export function SettingsView() {
 											{preset.label}
 										</SelectItem>
 									))}
+									{!frameRateSelect.isPreset && (
+										<SelectItem value={frameRateSelect.value}>
+											{frameRateSelect.value} fps
+										</SelectItem>
+									)}
 								</SelectContent>
 							</Select>
 						</SectionHeader>

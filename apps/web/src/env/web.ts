@@ -1,28 +1,23 @@
 import { z } from "zod";
 
+// Local-only, single-user build: nothing here is required to boot the app.
+// Server-side only. Client code must read `process.env.NEXT_PUBLIC_*`
+// directly so Next can inline it (NEXT_PUBLIC_SITE_URL: see site/brand.ts).
+// The Claude bridge address is not configurable here: it comes from
+// BRIDGE_HOST/BRIDGE_PORT in @opencut/claude-tools.
+
+// Treat `KEY=` lines in .env files as unset.
+const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
+
 const webEnvSchema = z.object({
 	// Node
-	NODE_ENV: z.enum(["development", "production", "test"]),
-	ANALYZE: z.string().optional(),
-	NEXT_RUNTIME: z.enum(["nodejs", "edge"]).optional(),
-
-	// Public
-	NEXT_PUBLIC_SITE_URL: z.url().default("http://localhost:3000"),
-	NEXT_PUBLIC_MARBLE_API_URL: z.url(),
-
-	// Server
-	DATABASE_URL: z.string().refine(
-		(url) =>
-			url.startsWith("postgres://") || url.startsWith("postgresql://"),
-		"DATABASE_URL must be a postgres:// or postgresql:// URL",
+	NODE_ENV: z.preprocess(
+		emptyToUndefined,
+		z.enum(["development", "production", "test"]).default("development"),
 	),
 
-	BETTER_AUTH_SECRET: z.string(),
-	UPSTASH_REDIS_REST_URL: z.url(),
-	UPSTASH_REDIS_REST_TOKEN: z.string(),
-	MARBLE_WORKSPACE_KEY: z.string(),
-	FREESOUND_CLIENT_ID: z.string(),
-	FREESOUND_API_KEY: z.string(),
+	// Server (optional)
+	FREESOUND_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;

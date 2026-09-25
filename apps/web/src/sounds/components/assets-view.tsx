@@ -24,11 +24,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useInfiniteScroll } from "@/hooks/use-infinite-scroll";
 import { useSoundSearch } from "@/sounds/use-sound-search";
 import { useSoundsStore } from "@/sounds/sounds-store";
+import { isSoundsNotConfigured } from "@/sounds/availability";
 import type { SavedSound, SoundEffect } from "@/sounds/types";
 import { cn } from "@/utils/ui";
 import {
 	FavouriteIcon,
 	FilterMailIcon,
+	MusicNote01Icon,
 	PauseIcon,
 	PlayIcon,
 	PlusSignIcon,
@@ -75,10 +77,12 @@ function SoundEffectsView() {
 		showCommercialOnly,
 		toggleCommercialFilter,
 		hasLoaded,
+		isNotConfigured,
 		setTopSoundEffects,
 		setLoading,
 		setError,
 		setHasLoaded,
+		setNotConfigured,
 		setCurrentPage,
 		setHasNextPage,
 		setTotalCount,
@@ -128,6 +132,12 @@ function SoundEffectsView() {
 				);
 
 				if (!shouldIgnore) {
+					if (await isSoundsNotConfigured({ response })) {
+						setNotConfigured({ notConfigured: true });
+						setHasLoaded({ loaded: true });
+						return;
+					}
+
 					if (!response.ok) {
 						throw new Error(`Failed to fetch: ${response.status}`);
 					}
@@ -167,6 +177,7 @@ function SoundEffectsView() {
 		setLoading,
 		setError,
 		setHasLoaded,
+		setNotConfigured,
 		setCurrentPage,
 		setHasNextPage,
 		setTotalCount,
@@ -195,6 +206,10 @@ function SoundEffectsView() {
 	};
 
 	const displayedSounds = searchQuery ? searchResults : topSoundEffects;
+
+	if (isNotConfigured) {
+		return <SoundsNotConfigured />;
+	}
 
 	const playSound = ({ sound }: { sound: SoundEffect }) => {
 		if (playingId === sound.id) {
@@ -298,6 +313,26 @@ function SoundEffectsView() {
 						)}
 					</div>
 				</ScrollArea>
+			</div>
+		</div>
+	);
+}
+
+function SoundsNotConfigured() {
+	return (
+		<div className="bg-background flex h-full flex-col items-center justify-center gap-3 p-4">
+			<HugeiconsIcon
+				icon={MusicNote01Icon}
+				className="text-muted-foreground size-10"
+			/>
+			<div className="flex flex-col gap-2 text-center">
+				<p className="text-lg font-medium">Recherche de sons indisponible</p>
+				<p className="text-muted-foreground text-sm text-balance">
+					Pour chercher des effets sonores sur Freesound, ajouter une clé{" "}
+					<code>FREESOUND_API_KEY</code> dans <code>apps/web/.env.local</code>{" "}
+					puis relancer le serveur. Les sons déjà enregistrés restent
+					disponibles.
+				</p>
 			</div>
 		</div>
 	);

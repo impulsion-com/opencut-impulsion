@@ -3,6 +3,7 @@ import { getMediaTypeFromFile } from "@/media/media-utils";
 import { formatStorageBytes } from "@/services/storage/quota";
 import { storageService } from "@/services/storage/service";
 import type { MediaAsset } from "@/media/types";
+import { normalizeMeasuredFps } from "@/fps/utils";
 import { readVideoFile } from "./mediabunny";
 import type { VideoFileData } from "./mediabunny";
 import { renderThumbnailDataUrl } from "./thumbnail";
@@ -137,9 +138,8 @@ export async function processMediaAssets({
 					duration = videoData.duration;
 					width = videoData.width;
 					height = videoData.height;
-					fps = Number.isFinite(videoData.fps)
-						? Math.round(videoData.fps)
-						: undefined;
+					// Keep fractional rates (29.97, 23.976): rounding broke NTSC.
+					fps = normalizeMeasuredFps(videoData.fps);
 					hasAudio = videoData.hasAudio;
 					thumbnailUrl = videoData.thumbnailUrl ?? undefined;
 

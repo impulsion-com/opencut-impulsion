@@ -7,13 +7,6 @@
 			"env": [
 				"NODE_ENV",
 				"NEXT_PUBLIC_SITE_URL",
-				"NEXT_PUBLIC_MARBLE_API_URL",
-				"DATABASE_URL",
-				"BETTER_AUTH_SECRET",
-				"UPSTASH_REDIS_REST_URL",
-				"UPSTASH_REDIS_REST_TOKEN",
-				"MARBLE_WORKSPACE_KEY",
-				"FREESOUND_CLIENT_ID",
 				"FREESOUND_API_KEY"
 			]
 		},
@@ -22,13 +15,6 @@
 		},
 		"dev": {
 			"persistent": true,
-			"cache": false
-		},
-		"preview": {
-			"persistent": true,
-			"cache": false
-		},
-		"deploy": {
 			"cache": false
 		},
 		"lint": {

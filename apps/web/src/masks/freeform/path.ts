@@ -574,6 +574,28 @@ export function insertPointIntoFreeformSegment({
 	const splitPoint = lerpPoint({ a: p012, b: p123, t: clampedT });
 
 	const nextPoints = [...points];
+	const isStraightSegment =
+		startPoint.outX === 0 &&
+		startPoint.outY === 0 &&
+		endPoint.inX === 0 &&
+		endPoint.inY === 0;
+	if (isStraightSegment) {
+		// A straight segment stays two straight segments: insert a corner point
+		// with no handles. The de Casteljau split below would give it tangent
+		// handles, and since dragging an anchor keeps its handles, moving the
+		// new point would bend both segments of what the user drew as a polygon.
+		nextPoints.splice(indices.endIndex, 0, {
+			id: pointId,
+			x: splitPoint.x,
+			y: splitPoint.y,
+			inX: 0,
+			inY: 0,
+			outX: 0,
+			outY: 0,
+		});
+		return nextPoints;
+	}
+
 	nextPoints[indices.startIndex] = {
 		...startPoint,
 		outX: p01.x - startPoint.x,

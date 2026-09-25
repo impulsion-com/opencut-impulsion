@@ -17,6 +17,10 @@ export interface MigrationProgress {
 	projectName: string | null;
 }
 
+const PROJECTS_DB_NAME = "video-editor-projects";
+const PROJECTS_STORE_NAME = "projects";
+const PROJECTS_DB_VERSION = 1;
+
 let hasCleanedUpMetaDb = false;
 
 const MIN_MIGRATION_DISPLAY_MS = 1000;
@@ -38,11 +42,12 @@ export async function runStorageMigrations({
 		hasCleanedUpMetaDb = true;
 	}
 
-	const projectsAdapter = new IndexedDBAdapter<ProjectRecord>(
-		"video-editor-projects",
-		"projects",
-		1,
-	);
+	// Must match the projects store opened by StorageService.
+	const projectsAdapter = new IndexedDBAdapter<ProjectRecord>({
+		dbName: PROJECTS_DB_NAME,
+		storeName: PROJECTS_STORE_NAME,
+		version: PROJECTS_DB_VERSION,
+	});
 
 	const projects = await projectsAdapter.getAll();
 
@@ -95,7 +100,7 @@ export async function runStorageMigrations({
 				break;
 			}
 
-			await projectsAdapter.set(projectId, result.project);
+			await projectsAdapter.set({ key: projectId, value: result.project });
 			migratedCount++;
 			currentVersion = migration.to;
 			projectRecord = result.project;

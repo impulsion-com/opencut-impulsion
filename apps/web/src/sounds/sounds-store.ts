@@ -11,6 +11,8 @@ interface SoundsStore {
 	isLoading: boolean;
 	error: string | null;
 	hasLoaded: boolean;
+	/** True when the search route reports Freesound has no API key. */
+	isNotConfigured: boolean;
 	showCommercialOnly: boolean;
 	toggleCommercialFilter: () => void;
 	searchQuery: string;
@@ -33,6 +35,7 @@ interface SoundsStore {
 	setLoading: ({ loading }: { loading: boolean }) => void;
 	setError: ({ error }: { error: string | null }) => void;
 	setHasLoaded: ({ loaded }: { loaded: boolean }) => void;
+	setNotConfigured: ({ notConfigured }: { notConfigured: boolean }) => void;
 	setSearchQuery: ({ query }: { query: string }) => void;
 	setSearchResults: ({ results }: { results: SoundEffect[] }) => void;
 	setSearching: ({ searching }: { searching: boolean }) => void;
@@ -67,6 +70,7 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 	isLoading: false,
 	error: null,
 	hasLoaded: false,
+	isNotConfigured: false,
 	showCommercialOnly: true,
 
 	toggleCommercialFilter: () => {
@@ -92,6 +96,8 @@ export const useSoundsStore = create<SoundsStore>((set, get) => ({
 	setLoading: ({ loading }) => set({ isLoading: loading }),
 	setError: ({ error }) => set({ error }),
 	setHasLoaded: ({ loaded }) => set({ hasLoaded: loaded }),
+	setNotConfigured: ({ notConfigured }) =>
+		set({ isNotConfigured: notConfigured }),
 	setSearchQuery: ({ query }) => set({ searchQuery: query }),
 	setSearchResults: ({ results }) =>
 		set({ searchResults: results, currentPage: 1 }),

@@ -1,8 +1,8 @@
 {
-	"name": "OpenCut",
-	"description": "A simple but powerful video editor that gets the job done. In your browser.",
+	"name": "OpenCut Impulsion",
+	"description": "Éditeur vidéo local d'Impulsion, basé sur OpenCut.",
 	"display": "standalone",
-	"start_url": "/",
+	"start_url": "/projects",
 	"icons": [
 		{
 			"src": "/icons/android-icon-36x36.png",

@@ -574,9 +574,10 @@ describe("resolveTrackPlacement", () => {
 			resolveTrackPlacement({
 				tracks,
 				elementType: "audio",
+				// [3, 4) fits between "a" and "b"; [6, 7) overlaps "b" [5, 7).
 				timeSpans: [
-					buildTimeSpan({ startTime: 2.5, duration: 1 }),
-					buildTimeSpan({ startTime: 5.5, duration: 1 }),
+					buildTimeSpan({ startTime: 3, duration: 1 }),
+					buildTimeSpan({ startTime: 6, duration: 1 }),
 				],
 				strategy: { type: "firstAvailable" },
 			}),
@@ -648,7 +649,7 @@ describe("resolveTrackPlacement", () => {
 			trackId: "video-main",
 			trackIndex: 0,
 			trackType: "video",
-			adjustedStartTime: 0,
+			adjustedStartTime: ZERO_MEDIA_TIME,
 		});
 	});
 

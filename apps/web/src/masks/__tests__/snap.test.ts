@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
 	findClosestPointOnFreeformSegment,
 	getFreeformPathClosedStateAfterPointRemoval,
@@ -228,7 +228,55 @@ describe("mask geometry", () => {
 	});
 });
 
+/**
+ * Bun has no canvas, and text masks measure their intrinsic size through a 2D
+ * context (`getTextMeasurementContext`). Stand in a deterministic one: each
+ * glyph is 0.6em wide, and ascent/descent fall back to the font-size ratios
+ * used by `text/layout.ts`. No-op when a real `OffscreenCanvas` exists.
+ */
+function installTextMeasurementStub(): () => void {
+	if (typeof OffscreenCanvas !== "undefined") return () => {};
+
+	class StubMeasurementCanvas {
+		getContext() {
+			let font = "";
+			return {
+				get font() {
+					return font;
+				},
+				set font(value: string) {
+					font = value;
+				},
+				textBaseline: "alphabetic",
+				save() {},
+				restore() {},
+				measureText(text: string) {
+					const fontSize = Number(/([\d.]+)px/.exec(font)?.[1] ?? 10);
+					return { width: text.length * fontSize * 0.6 };
+				},
+			};
+		}
+	}
+
+	Object.defineProperty(globalThis, "OffscreenCanvas", {
+		value: StubMeasurementCanvas,
+		configurable: true,
+		writable: true,
+	});
+	return () => {
+		Reflect.deleteProperty(globalThis, "OffscreenCanvas");
+	};
+}
+
 describe("mask snapping", () => {
+	let removeTextMeasurementStub = () => {};
+	beforeAll(() => {
+		removeTextMeasurementStub = installTextMeasurementStub();
+	});
+	afterAll(() => {
+		removeTextMeasurementStub();
+	});
+
 	test("snaps split mask movement using the shared position pipeline", () => {
 		const result = snapSplitMaskInteraction({
 			handleId: { kind: "position" },
@@ -346,7 +394,10 @@ describe("mask snapping", () => {
 		// bounds.width=200 → localCanvasSize.width/2=100 is the right snap target.
 		// width=0.4, scale=1 → aabbHalfW = (0.4*200)/2 * 1 = 40.
 		// At scale=2.48 → rightEdge=0+40*2.48=99.2; |99.2-100|=0.8 < threshold(8)
-		// → snaps to scale=1*(100/40)=2.5; line at position 100.
+		// → snaps to scale=1*(100/40)=2.5. The scale handle grows the mask about
+		// its center, so the left edge lands on -100 at the same time and both
+		// guides show (snapScale reports every aligned edge when no edge is
+		// preferred).
 		const result = snapBoxMaskInteraction({
 			handleId: { kind: "scale" },
 			startParams: buildRectangleParams({ scale: 1 }),
@@ -357,7 +408,10 @@ describe("mask snapping", () => {
 		});
 
 		expect(result.params.scale).toBe(2.5);
-		expect(result.activeLines).toEqual([{ type: "vertical", position: 100 }]);
+		expect(result.activeLines).toEqual([
+			{ type: "vertical", position: -100 },
+			{ type: "vertical", position: 100 },
+		]);
 	});
 
 	test("snaps text mask movement using intrinsic text bounds", () => {
@@ -504,6 +558,27 @@ describe("custom mask point insertion", () => {
 			outX: 0,
 			outY: 0,
 		});
+	});
+
+	test("keeps a curved segment's shape by splitting its handles", () => {
+		const [a, b, c] = buildFreeformPathMaskParams().path;
+		const points = [{ ...a, outX: 0, outY: -0.2 }, { ...b, inX: 0, inY: -0.2 }, c];
+		const nextPoints = insertPointIntoFreeformSegment({
+			points,
+			segmentIndex: 0,
+			pointId: "new",
+			t: 0.5,
+			closed: true,
+		});
+
+		// De Casteljau at t=0.5 on (-0.2,-0.1) (-0.2,-0.3) (0.2,-0.3) (0.2,-0.1).
+		expect(nextPoints[0].outY).toBeCloseTo(-0.1, 10);
+		expect(nextPoints[1].id).toBe("new");
+		expect(nextPoints[1].x).toBeCloseTo(0, 10);
+		expect(nextPoints[1].y).toBeCloseTo(-0.25, 10);
+		expect(nextPoints[1].inX).toBeCloseTo(-0.1, 10);
+		expect(nextPoints[1].outX).toBeCloseTo(0.1, 10);
+		expect(nextPoints[2].inY).toBeCloseTo(-0.1, 10);
 	});
 
 	test("builds updated custom mask params for a clicked segment", () => {

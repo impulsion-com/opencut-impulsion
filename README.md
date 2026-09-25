@@ -34,9 +34,10 @@ Thanks to [Vercel](https://vercel.com?utm_source=github-opencut&utm_campaign=oss
 ### Prerequisites
 
 - [Bun](https://bun.sh/docs/installation)
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 
-> **Note:** Docker is optional but recommended for running the local database and Redis. If you only want to work on frontend features, you can skip it.
+> **Impulsion fork:** the web app runs 100% locally for a single user. There is no database, auth, Redis, telemetry or deployment target. Every environment variable is optional.
+>
+> Telemetry is off for Next (`NEXT_TELEMETRY_DISABLED=1`) and Turborepo (`TURBO_TELEMETRY_DISABLED=1`, `--no-update-notifier`). The remaining outbound calls are accepted on purpose: Google Fonts CSS for the editor's font picker, Hugging Face models for the in-browser Whisper captions, cdn.brandfetch.io guide icons and, in `next dev` only, Next's version check against registry.npmjs.org (it has no switch; `bun run build && bun run start` in `apps/web` avoids it).
 
 ### Setup
 
@@ -52,22 +53,14 @@ Thanks to [Vercel](https://vercel.com?utm_source=github-opencut&utm_campaign=oss
    Copy-Item apps/web/.env.example apps/web/.env.local
    ```
 
-3. Start the database and Redis:
-
-   ```bash
-   docker compose up -d db redis serverless-redis-http
-   ```
-
-4. Install dependencies and start the dev server:
+3. Install dependencies and start the dev server:
 
    ```bash
    bun install
    bun dev:web
    ```
 
-The application will be available at [http://localhost:3000](http://localhost:3000).
-
-The `.env.example` has sensible defaults that match the Docker Compose config — it should work out of the box.
+The application will be available at [http://localhost:3456](http://localhost:3456). Always use exactly this URL: projects and media are stored in that origin's IndexedDB and OPFS.
 
 ### Desktop setup
 
@@ -79,7 +72,7 @@ If you want to get ready for `apps/desktop`, see [`apps/desktop/README.md`](apps
 
 Only needed if you're editing `rust/wasm` and want the web app to use your local build instead of the published package.
 
-**Prerequisites** — install these once before anything else:
+**Prerequisites**: install these once before anything else:
 
 ```bash
 # Rust toolchain
@@ -124,16 +117,6 @@ To switch `apps/web` back to the published package, run:
 cd apps/web
 bun add opencut-wasm
 ```
-
-### Self-Hosting with Docker
-
-To run everything (including a production build of the app) in Docker:
-
-```bash
-docker compose up -d
-```
-
-The app will be available at [http://localhost:3100](http://localhost:3100).
 
 ## Contributing
 

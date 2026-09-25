@@ -1,6 +1,5 @@
+import path from "node:path";
 import type { NextConfig } from "next";
-import { withBotId } from "botid/next/config";
-import { withContentCollections } from "@content-collections/next";
 
 const nextConfig: NextConfig = {
 	compiler: {
@@ -8,29 +7,15 @@ const nextConfig: NextConfig = {
 	},
 	reactStrictMode: true,
 	productionBrowserSourceMaps: true,
-	output: "standalone",
+	// Monorepo root; also silences the multiple-lockfile warning caused by
+	// a package-lock.json higher up in the home directory.
+	turbopack: {
+		root: path.join(__dirname, "../.."),
+	},
+	// Workspace package shipped as TypeScript source.
+	transpilePackages: ["@opencut/claude-tools"],
 	images: {
 		remotePatterns: [
-			{
-				protocol: "https",
-				hostname: "plus.unsplash.com",
-			},
-			{
-				protocol: "https",
-				hostname: "images.unsplash.com",
-			},
-			{
-				protocol: "https",
-				hostname: "images.marblecms.com",
-			},
-			{
-				protocol: "https",
-				hostname: "lh3.googleusercontent.com",
-			},
-			{
-				protocol: "https",
-				hostname: "avatars.githubusercontent.com",
-			},
 			{
 				protocol: "https",
 				hostname: "api.iconify.design",
@@ -51,4 +36,4 @@ const nextConfig: NextConfig = {
 	},
 };
 
-export default withContentCollections(withBotId(nextConfig));
+export default nextConfig;

@@ -1,0 +1,3 @@
+[test]
+# Loads the opencut-wasm binary for tests (see the file for why).
+preload = ["./src/wasm/test-preload.ts"]

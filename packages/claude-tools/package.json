@@ -1,0 +1,21 @@
+{
+  "name": "@opencut/claude-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Claude tool contract for the OpenCut Impulsion fork: tool definitions, edit-plan ops, tab/sidecar protocol and editor instructions.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

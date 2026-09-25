@@ -7,13 +7,12 @@ import { getDefaultShortcuts } from "@/actions";
 import { isTypableDOMElement } from "@/utils/browser";
 import { isAppleDevice } from "@/utils/platform";
 import type {
-	Key,
 	KeybindingConfig,
 	ModifierKeys,
 	ShortcutKey,
 } from "@/actions/keybinding";
-import { isKey } from "@/actions/keybinding";
 import { runMigrations, CURRENT_VERSION } from "./keybindings/migrations";
+import { getPressedKey } from "./keybindings/pressed-key";
 
 export interface KeybindingConflict {
 	key: ShortcutKey;
@@ -229,33 +228,6 @@ function generateKeybindingString(ev: KeyboardEvent): ShortcutKey | null {
 	}
 
 	return key;
-}
-
-function getPressedKey(ev: KeyboardEvent): Key | null {
-	const raw = (ev.key ?? "").toLowerCase();
-	const code = ev.code ?? "";
-
-	if (code === "Space" || raw === " " || raw === "spacebar" || raw === "space")
-		return "space";
-
-	if (raw === "arrowup") return "up";
-	if (raw === "arrowdown") return "down";
-	if (raw === "arrowleft") return "left";
-	if (raw === "arrowright") return "right";
-
-	if (code.startsWith("Key")) {
-		const letter = code.slice(3).toLowerCase();
-		if (isKey(letter)) return letter;
-	}
-
-	// Use physical key position for AZERTY and other non-QWERTY layouts.
-	if (code.startsWith("Digit")) {
-		const digit = code.slice(5);
-		if (isKey(digit)) return digit;
-	}
-
-	if (isKey(raw)) return raw;
-	return null;
 }
 
 function getActiveModifier(ev: KeyboardEvent): ModifierKeys | null {

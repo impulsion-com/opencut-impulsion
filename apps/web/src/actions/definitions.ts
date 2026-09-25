@@ -152,6 +152,34 @@ export const ACTIONS = {
 
 export type TAction = keyof typeof ACTIONS;
 
+/**
+ * Actions whose args are required (the non-optional entries of
+ * `TActionArgsMap`), so they cannot be bound to a shortcut. Typed as a record
+ * over that exact union: adding or removing such an action without updating
+ * this list is a compile error.
+ */
+const ACTIONS_WITH_REQUIRED_ARGS: Record<
+	Exclude<TAction, TActionWithOptionalArgs>,
+	true
+> = {
+	"remove-media-asset": true,
+	"remove-media-assets": true,
+};
+
+function hasOwnKey({ record, key }: { record: object; key: string }): boolean {
+	return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/** Runtime check for `TActionWithOptionalArgs` (a shortcut-bindable action). */
+export function isActionWithOptionalArgs(
+	value: string,
+): value is TActionWithOptionalArgs {
+	return (
+		hasOwnKey({ record: ACTIONS, key: value }) &&
+		!hasOwnKey({ record: ACTIONS_WITH_REQUIRED_ARGS, key: value })
+	);
+}
+
 const ACTION_DEFAULT_SHORTCUTS = [
 	["toggle-play", ["space", "k"]],
 	["seek-forward", ["l"]],

@@ -1,3 +1,5 @@
+// No consumer since the marketing pages were removed; kept on purpose to render
+// Claude's markdown replies in the upcoming chat panel (src/claude/components).
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/utils/ui";
 

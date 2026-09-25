@@ -1,7 +1,10 @@
 import { webEnv } from "@/env/web";
 import { type NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { checkRateLimit } from "@/auth/rate-limit";
+import {
+	SOUNDS_NOT_CONFIGURED_CODE,
+	SOUNDS_NOT_CONFIGURED_STATUS,
+} from "@/sounds/availability";
 
 const searchParamsSchema = z.object({
 	q: z.string().max(500, "Query too long").optional(),
@@ -148,12 +151,17 @@ function transformFreesoundResult(
 }
 
 export async function GET(request: NextRequest) {
-	try {
-		const { limited } = await checkRateLimit({ request });
-		if (limited) {
-			return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-		}
+	// Freesound is optional in the local build: without a key, report
+	// "not configured" so the Sounds tab can show a notice.
+	const apiKey = webEnv.FREESOUND_API_KEY;
+	if (!apiKey) {
+		return NextResponse.json(
+			{ error: "Freesound non configuré", code: SOUNDS_NOT_CONFIGURED_CODE },
+			{ status: SOUNDS_NOT_CONFIGURED_STATUS },
+		);
+	}
 
+	try {
 		const { searchParams } = new URL(request.url);
 
 		const validationResult = searchParamsSchema.safeParse({
@@ -202,7 +210,7 @@ export async function GET(request: NextRequest) {
 
 		const params = new URLSearchParams({
 			query: query || "",
-			token: webEnv.FREESOUND_API_KEY,
+			token: apiKey,
 			page: page.toString(),
 			page_size: pageSize.toString(),
 			sort: sortParam,

@@ -54,6 +54,60 @@ export function floatToFrameRate(fps: number): FrameRate {
 	};
 }
 
+/**
+ * A measured rate this close to a standard rate is that rate. Much tighter than
+ * `STANDARD_FRAME_RATE_TOLERANCE`: a constant frame rate NTSC clip measures
+ * 29.97003 almost exactly, while a variable frame rate 30 fps clip (phone
+ * rushes, screen recordings) can average anywhere around 29.9..30.1 and must
+ * stay 30, not become 29.97.
+ */
+const MEASURED_STANDARD_TOLERANCE = 0.002;
+
+/** Ticks per second of `MediaTime` (rust/crates/time/src/media_time.rs). */
+const MEDIA_TICKS_PER_SECOND = 120_000;
+
+function hasWholeTicksPerFrame(fps: number): boolean {
+	return MEDIA_TICKS_PER_SECOND % fps === 0;
+}
+
+/**
+ * Nearest integer rate with a whole number of ticks per frame (the lower
+ * neighbour wins a tie). The time crate's `ticks_per_frame` rejects other
+ * rates, which disables frame snapping and blanks the frame timecode.
+ */
+function nearestTickableIntegerRate(fps: number): number | undefined {
+	const rounded = Math.round(fps);
+	if (rounded < 1) return undefined;
+	for (let distance = 0; distance <= rounded; distance++) {
+		const lower = rounded - distance;
+		if (lower >= 1 && hasWholeTicksPerFrame(lower)) return lower;
+		const upper = rounded + distance;
+		if (hasWholeTicksPerFrame(upper)) return upper;
+	}
+	return undefined;
+}
+
+/**
+ * Clean up a frame rate measured from packet timestamps (mediabunny's
+ * `averagePacketRate`). A measurement within `MEASURED_STANDARD_TOLERANCE` of
+ * a standard rate snaps to its exact value, so NTSC sources stay 29.97 /
+ * 23.976 / 59.94 (30000/1001 once through `floatToFrameRate`). Anything else
+ * (variable frame rate averages such as 30.03 or 29.94) is rounded to an
+ * integer like the original `Math.round`, then moved to the nearest rate the
+ * timeline can snap to, so importing such a clip never gives the project a
+ * rate that breaks snapping or timecodes.
+ */
+export function normalizeMeasuredFps(fps: number): number | undefined {
+	if (!Number.isFinite(fps) || fps <= 0) return undefined;
+
+	const standard = STANDARD_FRAME_RATES.find(
+		(candidate) => Math.abs(fps - candidate.value) <= MEASURED_STANDARD_TOLERANCE,
+	);
+	if (standard) return standard.value;
+
+	return nearestTickableIntegerRate(fps);
+}
+
 function gcd({ left, right }: { left: number; right: number }): number {
 	let a = Math.abs(left);
 	let b = Math.abs(right);

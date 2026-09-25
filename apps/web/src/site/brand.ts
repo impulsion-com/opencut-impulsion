@@ -1,12 +1,11 @@
-export const SITE_URL = "https://opencut.app";
+// Inlined at build time by Next, safe to import from client components.
+export const SITE_URL =
+	process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3456";
 
 export const SITE_INFO = {
-	title: "OpenCut",
-	description:
-		"A simple but powerful video editor that gets the job done. In your browser.",
+	title: "OpenCut Impulsion",
+	description: "Éditeur vidéo local d'Impulsion, basé sur OpenCut.",
 	url: SITE_URL,
-	openGraphImage: "/open-graph/default.jpg",
-	twitterImage: "/open-graph/default.jpg",
 	favicon: "/favicon.ico",
 };
 

@@ -4,6 +4,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Plugins */
+/* typography: no `prose` user today (blog removed); kept for the Claude chat
+   panel's markdown replies. Tailwind only emits the classes that are used. */
 @plugin "@tailwindcss/typography";
 @plugin "tailwindcss-animate";
 

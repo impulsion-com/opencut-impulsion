@@ -13,13 +13,8 @@ node_modules
 # cursor
 bun.lockb
 
-# content-collections
-.content-collections
-
 # Twiggy
 .cursor/
-
-.open-next
 
 target/
 
