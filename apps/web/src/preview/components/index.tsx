@@ -141,6 +141,7 @@ function PreviewCanvas({
 	const viewportRef = useRef<HTMLDivElement>(null);
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
+	const lastVersionRef = useRef(-1);
 	const renderingRef = useRef(false);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
@@ -184,6 +185,8 @@ function PreviewCanvas({
 
 	const render = useCallback(() => {
 		if (!renderTree || renderingRef.current) return;
+		// A capture, snapshot, thumbnail or export owns the shared compositor right now.
+		if (editor.renderer.isRenderLocked()) return;
 
 		const renderTime = Math.min(
 			editor.playback.getCurrentTime(),
@@ -193,10 +196,13 @@ function PreviewCanvas({
 			(TICKS_PER_SECOND * renderer.fps.denominator) / renderer.fps.numerator,
 		);
 		const frame = Math.floor(renderTime / ticksPerFrame);
+		// Moves when the lock is released: the compositor canvas then shows another render's frame.
+		const previewVersion = editor.renderer.getPreviewVersion();
 
 		if (
 			frame === lastFrameRef.current &&
-			renderTree === lastSceneRef.current
+			renderTree === lastSceneRef.current &&
+			previewVersion === lastVersionRef.current
 		) {
 			return;
 		}
@@ -204,12 +210,14 @@ function PreviewCanvas({
 		renderingRef.current = true;
 		lastSceneRef.current = renderTree;
 		lastFrameRef.current = frame;
-		renderer
+		lastVersionRef.current = previewVersion;
+		const pending = renderer
 			.render({ node: renderTree, time: renderTime })
-			.then(() => {
+			.finally(() => {
 				renderingRef.current = false;
 			});
-	}, [renderer, renderTree, editor.playback, editor.timeline]);
+		editor.renderer.trackPreviewRender({ render: pending });
+	}, [renderer, renderTree, editor.playback, editor.timeline, editor.renderer]);
 
 	useRafLoop(render);
 

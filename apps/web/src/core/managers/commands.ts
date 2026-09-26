@@ -8,6 +8,11 @@ interface CommandHistoryEntry {
 	command: Command;
 	previousSelection: EditorSelectionSnapshot;
 	selectionOverride?: EditorSelectionSnapshot;
+	/**
+	 * Whether ripple ran when the command was first executed. Redo replays that, not the current toggle, so a
+	 * redo gives back the timeline the command produced (an AI edit, run with ripple pinned off, never ripples).
+	 */
+	rippled: boolean;
 }
 
 export class CommandManager {
@@ -15,24 +20,57 @@ export class CommandManager {
 	private history: CommandHistoryEntry[] = [];
 	private redoStack: CommandHistoryEntry[] = [];
 	private reactors: Array<() => void> = [];
+	private listeners = new Set<() => void>();
 
 	constructor(private editor: EditorCore) {}
 
+	/** Notified after execute, push, undo, redo, clear and discardRedo (history changes, not track changes). */
+	subscribe(listener: () => void): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
+
+	/** The command the next undo() would revert, or null. */
+	peekUndo(): Command | null {
+		return this.history[this.history.length - 1]?.command ?? null;
+	}
+
+	/** The command the next redo() would re-apply, or null. */
+	peekRedo(): Command | null {
+		return this.redoStack[this.redoStack.length - 1]?.command ?? null;
+	}
+
+	/**
+	 * Drops `command` from the top of the redo stack (e.g. an edit that was undone because it was refused), so
+	 * redo cannot re-apply it. Returns false, and changes nothing, when it is not the next redo entry.
+	 */
+	discardRedo({ command }: { command: Command }): boolean {
+		if (this.peekRedo() !== command) return false;
+		this.redoStack.pop();
+		this.notify();
+		return true;
+	}
+
 	execute({ command }: { command: Command }): Command {
-		const beforeTracks = this.isRippleEnabled
+		const rippled = this.isRippleEnabled;
+		const beforeTracks = rippled
 			? (this.editor.scenes.getActiveSceneOrNull()?.tracks ?? null)
 			: null;
 		const previousSelection = this.getSelectionSnapshot();
 		const result = command.execute();
-		this.applyRippleIfEnabled({ beforeTracks });
+		this.applyRipple({ beforeTracks });
 		const selectionOverride = this.applySelectionOverride(result);
 		this.runReactors();
 		this.history.push({
 			command,
 			previousSelection,
 			selectionOverride,
+			rippled,
 		});
 		this.redoStack = [];
+		this.notify();
 		return command;
 	}
 
@@ -40,8 +78,10 @@ export class CommandManager {
 		this.history.push({
 			command,
 			previousSelection: this.getSelectionSnapshot(),
+			rippled: false,
 		});
 		this.redoStack = [];
+		this.notify();
 	}
 
 	registerReactor(reactor: () => void): void {
@@ -64,6 +104,7 @@ export class CommandManager {
 				});
 			}
 			this.redoStack.push(entry);
+			this.notify();
 		}
 	}
 
@@ -74,12 +115,13 @@ export class CommandManager {
 			return;
 		}
 
-		const beforeTracks = this.isRippleEnabled
+		// Replays the ripple of the original execute, whatever the toggle says now.
+		const beforeTracks = entry.rippled
 			? (this.editor.scenes.getActiveSceneOrNull()?.tracks ?? null)
 			: null;
 		const previousSelection = this.getSelectionSnapshot();
 		const result = entry.command.redo();
-		this.applyRippleIfEnabled({ beforeTracks });
+		this.applyRipple({ beforeTracks });
 		const selectionOverride = this.applySelectionOverride(result);
 		this.runReactors();
 
@@ -87,7 +129,9 @@ export class CommandManager {
 			command: entry.command,
 			previousSelection,
 			selectionOverride,
+			rippled: entry.rippled,
 		});
+		this.notify();
 	}
 
 	canUndo(): boolean {
@@ -101,6 +145,13 @@ export class CommandManager {
 	clear(): void {
 		this.history = [];
 		this.redoStack = [];
+		this.notify();
+	}
+
+	private notify(): void {
+		for (const listener of this.listeners) {
+			listener();
+		}
 	}
 
 	private getSelectionSnapshot(): EditorSelectionSnapshot {
@@ -124,12 +175,13 @@ export class CommandManager {
 		}
 	}
 
-	private applyRippleIfEnabled({
+	/** Closes the gaps the command opened; a no-op when beforeTracks is null (ripple did not apply). */
+	private applyRipple({
 		beforeTracks,
 	}: {
 		beforeTracks: SceneTracks | null;
 	}): void {
-		if (!this.isRippleEnabled || !beforeTracks) {
+		if (!beforeTracks) {
 			return;
 		}
 

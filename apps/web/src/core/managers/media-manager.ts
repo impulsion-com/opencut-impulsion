@@ -94,6 +94,13 @@ export class MediaManager {
 			});
 			this.assets = mediaAssets;
 			this.notify();
+			// Frees the files of media removed in an earlier session and never restored (RemoveMediaAssetCommand
+			// keeps them for undo). Not awaited: loading does not wait for the cleanup.
+			storageService
+				.pruneOrphanedMediaFiles({ projectId })
+				.catch((error) => {
+					console.warn("Failed to prune orphaned media files:", error);
+				});
 		} catch (error) {
 			console.error("Failed to load media assets:", error);
 		} finally {

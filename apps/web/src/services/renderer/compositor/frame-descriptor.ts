@@ -26,6 +26,7 @@ import type {
 	TextureUploadDescriptor,
 } from "./types";
 import { DEFAULT_GRAPHIC_SOURCE_SIZE } from "@/graphics";
+import { getSourceVersion } from "../source-version";
 
 export async function buildFrameDescriptor({
 	node,
@@ -138,9 +139,9 @@ async function collectNode({
 		const textureId = `${path}:blur-background`;
 		const { width, height } = renderer;
 		const { backdropSource, passes } = node.resolved;
-		// Backdrop pixels come from a decoded video/image frame whose identity
-		// already changes when it changes. Hashing the source reference is
-		// enough to let us skip redraws on frozen frames.
+		// Backdrop pixels come from a decoded video/image frame. Video frames
+		// arrive in pooled canvases, so the hash carries the source's content
+		// version along with its identity; frozen frames still skip redraws.
 		const contentHash = `blur:${identityKey(backdropSource.source)}:${backdropSource.width}x${backdropSource.height}:${width}x${height}`;
 		textures.set(textureId, {
 			kind: "rendered",
@@ -575,7 +576,7 @@ function identityKey(source: CanvasImageSource): string {
 			key = nextIdentity++;
 			identityKeys.set(source, key);
 		}
-		return `@${key}`;
+		return `@${key}.${getSourceVersion(source)}`;
 	}
 	return "@?";
 }

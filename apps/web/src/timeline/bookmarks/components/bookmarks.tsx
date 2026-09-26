@@ -81,30 +81,35 @@ export function TimelineBookmarksRow({
 }: TimelineBookmarksRowProps) {
 	const bookmarks = useEditor((e) => e.scenes.getActiveScene().bookmarks);
 
+	// The bookmarks are siblings of the ruler button, not children: a <button> inside a <button> is invalid
+	// HTML (React logs an error for every bookmark row render).
 	return (
 		<div
 			className="relative flex-1 overflow-hidden"
 			style={{ height: TIMELINE_BOOKMARK_ROW_HEIGHT_PX }}
 		>
-			<button
-				className="relative w-full cursor-default select-none border-0 bg-transparent p-0"
+			<div
+				className="relative"
 				style={{
 					height: TIMELINE_BOOKMARK_ROW_HEIGHT_PX,
 					width: `${dynamicTimelineWidth}px`,
 				}}
-				aria-label="Timeline ruler"
-				type="button"
 				onWheel={handleWheel}
-				onClick={(event) => {
-					if (!event.currentTarget.contains(event.target as Node)) return;
-					handleTimelineContentClick(event);
-				}}
-				onMouseDown={(event) => {
-					if (!event.currentTarget.contains(event.target as Node)) return;
-					handleRulerMouseDown(event);
-					handleRulerTrackingMouseDown(event);
-				}}
 			>
+				<button
+					className="absolute inset-0 cursor-default select-none border-0 bg-transparent p-0"
+					aria-label="Timeline ruler"
+					type="button"
+					onClick={(event) => {
+						if (!event.currentTarget.contains(event.target as Node)) return;
+						handleTimelineContentClick(event);
+					}}
+					onMouseDown={(event) => {
+						if (!event.currentTarget.contains(event.target as Node)) return;
+						handleRulerMouseDown(event);
+						handleRulerTrackingMouseDown(event);
+					}}
+				/>
 				{bookmarks.map((bookmark) => (
 					<TimelineBookmark
 						key={`bookmark-${bookmark.time}`}
@@ -114,7 +119,7 @@ export function TimelineBookmarksRow({
 						onBookmarkMouseDown={onBookmarkMouseDown}
 					/>
 				))}
-			</button>
+			</div>
 		</div>
 	);
 }

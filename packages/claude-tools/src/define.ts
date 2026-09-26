@@ -41,6 +41,7 @@ export type ToolInputSchema = z.ZodObject<z.ZodRawShape>;
 export interface ToolDefinition<
 	N extends string = string,
 	I extends ToolInputSchema = ToolInputSchema,
+	R extends ToolRunsIn = ToolRunsIn,
 > {
 	readonly name: N;
 	/** Short human title (MCP "title"). */
@@ -48,7 +49,8 @@ export interface ToolDefinition<
 	/** Written for the model: what, when, returns, units, gotchas. */
 	readonly description: string;
 	readonly group: ToolGroup;
-	readonly runsIn: ToolRunsIn;
+	/** Kept as a literal type so TabToolName / HybridToolName / SidecarToolName can be derived from TOOLS. */
+	readonly runsIn: R;
 	readonly input: I;
 	readonly annotations: Readonly<ToolAnnotations>;
 	/** True when the tool starts a background job and returns a jobId instead of waiting. */
@@ -57,12 +59,16 @@ export interface ToolDefinition<
 	readonly alwaysLoad: boolean;
 }
 
-export interface DefineToolInput<N extends string, I extends ToolInputSchema> {
+export interface DefineToolInput<
+	N extends string,
+	I extends ToolInputSchema,
+	R extends ToolRunsIn = ToolRunsIn,
+> {
 	name: N;
 	title: string;
 	description: string;
 	group: ToolGroup;
-	runsIn: ToolRunsIn;
+	runsIn: R;
 	input: I;
 	annotations: ToolAnnotations;
 	longRunning?: boolean;
@@ -70,9 +76,11 @@ export interface DefineToolInput<N extends string, I extends ToolInputSchema> {
 }
 
 /** Declares a tool. Pure data: handlers live in apps/bridge (sidecar) and apps/web (tab). */
-export function defineTool<const N extends string, I extends ToolInputSchema>(
-	def: DefineToolInput<N, I>,
-): ToolDefinition<N, I> {
+export function defineTool<
+	const N extends string,
+	I extends ToolInputSchema,
+	const R extends ToolRunsIn,
+>(def: DefineToolInput<N, I, R>): ToolDefinition<N, I, R> {
 	return Object.freeze({
 		name: def.name,
 		title: def.title,

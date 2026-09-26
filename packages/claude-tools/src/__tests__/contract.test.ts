@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import {
+	BRIDGE_FILES_PATH,
+	BRIDGE_ORIGIN,
+	CHAT_MODELS,
 	CHAT_SYSTEM_PROMPT_APPEND,
 	checkEditPlan,
+	DEFAULT_CHAT_MODEL,
 	EDIT_OP_NAMES,
 	EDITOR_PROMPT_FR,
 	EDITOR_RULES,
@@ -16,6 +20,7 @@ import {
 	type HubMessage,
 	INTERNAL_METHOD_PARAMS,
 	INTERNAL_METHODS,
+	isBridgeUrl,
 	isInternalMethod,
 	isToolName,
 	parseHubMessage,
@@ -28,6 +33,9 @@ import {
 	TOOLS,
 	toMcpToolConfig,
 	ALWAYS_LOAD_META_KEY,
+	type HybridToolName,
+	type SidecarToolName,
+	type TabToolName,
 	type ToolInput,
 	type ToolName,
 } from "../index";
@@ -74,6 +82,12 @@ const typedMaxEdge: ToolInput<"capture_frame">["maxEdge"] = 1280;
 // @ts-expect-error unknown tool names are rejected
 type UnknownToolInput = ToolInput<"not_a_tool">;
 const typedName: ToolName = "apply_edit_plan";
+// runsIn stays a literal, so the per-side name unions are real (they collapsed to never when it was widened).
+const typedTabTool: TabToolName = "get_editor_state";
+const typedHybridTool: HybridToolName = "import_media";
+const typedSidecarTool: SidecarToolName = "job_status";
+// @ts-expect-error hybrid tools never reach the tab by name
+const notATabTool: TabToolName = "import_media";
 
 describe("tool catalogue", () => {
 	test("type-level helpers resolve", () => {
@@ -81,6 +95,12 @@ describe("tool catalogue", () => {
 			"insert_media",
 			1280,
 			"apply_edit_plan",
+		]);
+		expect([typedTabTool, typedHybridTool, typedSidecarTool, notATabTool]).toEqual([
+			"get_editor_state",
+			"import_media",
+			"job_status",
+			"import_media",
 		]);
 		const unused: UnknownToolInput | undefined = undefined;
 		expect(unused).toBeUndefined();
@@ -449,7 +469,7 @@ const TAB_MESSAGES: TabMessage[] = [
 		type: "chat.send",
 		sessionKey: "p1",
 		text: "Coupe les silences du début",
-		model: "claude-opus-5",
+		model: "claude-opus-5-5",
 		profile: "B",
 		attachments: [
 			{ type: "image", data: TINY_JPEG, mimeType: "image/jpeg", name: "ref.jpg" },
@@ -469,7 +489,7 @@ const HUB_MESSAGES: HubMessage[] = [
 	{ type: "welcome", protocolVersion: 1, role: "passive", sidecarVersion: "0.1.0", activeTab: null },
 	{ type: "rpc", id: "r1", method: "apply_edit_plan", params: { ops: EXAMPLE_PLANS["remove two retakes across every track"], expectStateVersion: 42 }, projectId: "p1", timeoutMs: 30_000, idempotencyKey: "call-7" },
 	{ type: "rpc", id: "r2", method: "internal.ping", params: {} },
-	{ type: "chat.event", sessionKey: "p1", event: { type: "session", sessionId: "s1", model: "claude-opus-5", apiKeySource: "none" } },
+	{ type: "chat.event", sessionKey: "p1", event: { type: "session", sessionId: "s1", model: "claude-opus-5-5", apiKeySource: "none" } },
 	{ type: "chat.event", sessionKey: "p1", event: { type: "text_delta", text: "Je coupe " } },
 	{ type: "chat.event", sessionKey: "p1", event: { type: "thinking_delta", text: "Les silences sont..." } },
 	{ type: "chat.event", sessionKey: "p1", event: { type: "tool_start", toolUseId: "tu1", name: "capture_frame", input: { time: 3 } } },
@@ -576,6 +596,37 @@ describe("protocol", () => {
 		expect(exportTo("http://127.0.0.1:3457/exports/job-1")).toBe(true);
 		expect(exportTo("http://localhost:3457/exports")).toBe(false);
 		expect(exportTo("http://127.0.0.1:3457/exportsx")).toBe(false);
+	});
+
+	test("opaque /files/<id> URLs are accepted, escapes out of /files are not", () => {
+		const importWith = (url: string) =>
+			INTERNAL_METHOD_PARAMS["internal.import_files"].safeParse({
+				files: [{ path: "/Users/me/videos/a.mp4", url, name: "a.mp4", size: 1, mimeType: "video/mp4" }],
+			}).success;
+		expect(importWith(`${BRIDGE_ORIGIN}${BRIDGE_FILES_PATH}/f_9b1c2d3e4f`)).toBe(true);
+		expect(importWith("http://127.0.0.1:3457/files/3f2a9c1e-7b4d-4e8a-9c1f-2b3c4d5e6f70")).toBe(true);
+		expect(importWith("http://127.0.0.1:3457/files?path=%2FUsers%2Fme%2Fa.mp4")).toBe(true);
+		// The URL parser resolves dot segments (plain or percent-encoded) before the path check.
+		expect(importWith("http://127.0.0.1:3457/files/../exports/x")).toBe(false);
+		expect(importWith("http://127.0.0.1:3457/files/%2e%2e/exports/x")).toBe(false);
+		expect(importWith("http://127.0.0.1:3457/filesx/abc")).toBe(false);
+		expect(importWith("http://127.0.0.1:3458/files/abc")).toBe(false);
+		expect(importWith("ws://127.0.0.1:3457/files/abc")).toBe(false);
+		expect(isBridgeUrl("http://127.0.0.1:3457/files/abc", BRIDGE_FILES_PATH)).toBe(true);
+		expect(isBridgeUrl("not a url", BRIDGE_FILES_PATH)).toBe(false);
+	});
+
+	test("chat models: Opus 5.5 first and default, plain-text labels", () => {
+		expect(CHAT_MODELS.map((model) => model.id)).toEqual([
+			"claude-opus-5-5",
+			"claude-sonnet-5",
+			"claude-haiku-4-5",
+			"claude-fable-5-1",
+			"claude-opus-5",
+		]);
+		expect(CHAT_MODELS.map((model) => model.label)).toEqual(["Opus 5.5", "Sonnet 5", "Haiku 4.5", "Fable 5.1", "Opus 5"]);
+		expect(DEFAULT_CHAT_MODEL).toBe("claude-opus-5-5");
+		expect(CHAT_MODELS[0].id).toBe(DEFAULT_CHAT_MODEL);
 	});
 
 	test("every error code has a hint", () => {

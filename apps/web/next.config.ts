@@ -14,6 +14,18 @@ const nextConfig: NextConfig = {
 	},
 	// Workspace package shipped as TypeScript source.
 	transpilePackages: ["@opencut/claude-tools"],
+	// No site may frame the editor: a framed tab would connect to the Claude bridge with our own Origin.
+	async headers() {
+		return [
+			{
+				source: "/:path*",
+				headers: [
+					{ key: "X-Frame-Options", value: "DENY" },
+					{ key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+				],
+			},
+		];
+	},
 	images: {
 		remotePatterns: [
 			{

@@ -21,7 +21,7 @@ Consumers:
 
   `runsIn` says who handles the call: `tab` tools are forwarded unchanged with `hub.call`; `sidecar` tools run in Node; `hybrid` tools are handled by the sidecar, which does the disk or job part in Node and calls the tab through `INTERNAL_METHOD_PARAMS` or tab tools (`list_disk_media` calls `list_media` for mediaIds). The sidecar also adds `path` to `list_media` results from its import index.
 
-  The hub must reject WebSocket upgrades whose `Origin` is not `EDITOR_ORIGIN`, and `/mcp` must check `Host`/`Origin` (the MCP SDK's DNS-rebinding protection is off by default; `createMcpExpressApp({host: "127.0.0.1"})` turns it on). The tab only fetches `/files` and POSTs `/exports` on `BRIDGE_ORIGIN` (the protocol schemas refuse any other URL).
+  The hub must reject WebSocket upgrades whose `Origin` is not `EDITOR_ORIGIN`, and `/mcp` must check `Host`/`Origin` (the MCP SDK's DNS-rebinding protection is off by default; `createMcpExpressApp({host: "127.0.0.1"})` turns it on). The tab only fetches `/files` (preferably the opaque `/files/<id>` form minted by the sidecar, so disk paths never travel in URLs; `/files?path=` also passes) and POSTs `/exports` on `BRIDGE_ORIGIN` (the protocol schemas refuse any other URL).
 - **Editor tab (`apps/web`)** parses every hub frame with `parseHubMessage`, validates params with `parseToolInput(name, params)` and dispatches to a handler typed `(input: ToolInput<N>) => Promise<ToolResult>`.
 
 Conventions baked into the schemas:

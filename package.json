@@ -8,6 +8,8 @@
   "scripts": {
     "build:wasm": "wasm-pack build rust/wasm --target bundler --out-dir pkg",
     "build:web": "TURBO_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 turbo run build --filter=@opencut/web --no-update-notifier",
+    "dev:bridge": "bun run --cwd apps/bridge dev",
+    "dev:impulsion": "node apps/bridge/scripts/dev-impulsion.mjs",
     "dev:wasm": "cargo watch -w rust/crates -w rust/wasm/src -s 'wasm-pack build rust/wasm --target bundler --out-dir pkg'",
     "dev:web": "TURBO_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1 turbo run dev --filter=@opencut/web --no-update-notifier",
     "format:web": "prettier apps/web/src/services/renderer --write",

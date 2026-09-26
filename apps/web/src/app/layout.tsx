@@ -2,6 +2,7 @@ import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { Toaster } from "../components/ui/sonner";
 import { TooltipProvider } from "../components/ui/tooltip";
+import { ClaudeBridge } from "@/claude/bridge/claude-bridge";
 import { baseMetaData } from "./metadata";
 import localFont from "next/font/local";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
 				>
 					<TooltipProvider>
 						<Toaster />
+						<ClaudeBridge />
 						{children}
 					</TooltipProvider>
 				</ThemeProvider>

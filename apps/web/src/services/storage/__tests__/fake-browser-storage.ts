@@ -224,6 +224,13 @@ export class FakeIndexedDB {
 	}
 }
 
+/**
+ * Files whose OPFS entry was removed. In Chrome a File obtained with getFile() is a snapshot of its entry: once
+ * the entry is deleted, reading it (e.g. writing it elsewhere) fails with NotReadableError. The fake mimics that
+ * for writes, which is what StorageService does with a File.
+ */
+const removedFiles = new WeakSet<Blob>();
+
 class FakeFileHandle {
 	private readonly files: Map<string, File>;
 	private readonly name: string;
@@ -243,6 +250,12 @@ class FakeFileHandle {
 		const chunks: BlobPart[] = [];
 		return {
 			write: async (data: Blob) => {
+				if (removedFiles.has(data)) {
+					throw new DOMException(
+						"The requested file could not be read",
+						"NotReadableError",
+					);
+				}
 				chunks.push(data);
 			},
 			close: async () => {
@@ -269,7 +282,10 @@ class FakeDirectoryHandle {
 	}
 
 	async removeEntry(name: string): Promise<void> {
-		if (!this.files.delete(name)) throw notFound(`No file named "${name}"`);
+		const file = this.files.get(name);
+		if (!file) throw notFound(`No file named "${name}"`);
+		removedFiles.add(file);
+		this.files.delete(name);
 	}
 
 	async *keys(): AsyncIterableIterator<string> {

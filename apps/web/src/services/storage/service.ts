@@ -24,6 +24,30 @@ import {
 import type { Bookmark, SceneTracks, TScene } from "@/timeline";
 import { roundMediaTime } from "@/wasm";
 
+/** Orphaned media files younger than this are left alone by pruneOrphanedMediaFiles (an import in flight). */
+export const ORPHANED_MEDIA_MIN_AGE_MS = 60_000;
+
+function buildMediaAssetData({
+	mediaAsset,
+}: {
+	mediaAsset: MediaAsset;
+}): MediaAssetData {
+	return {
+		id: mediaAsset.id,
+		name: mediaAsset.name,
+		type: mediaAsset.type,
+		size: mediaAsset.file.size,
+		lastModified: mediaAsset.file.lastModified,
+		width: mediaAsset.width,
+		height: mediaAsset.height,
+		duration: mediaAsset.duration,
+		fps: mediaAsset.fps,
+		hasAudio: mediaAsset.hasAudio,
+		thumbnailUrl: mediaAsset.thumbnailUrl,
+		ephemeral: mediaAsset.ephemeral,
+	};
+}
+
 function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 	if (!Array.isArray(raw)) return [];
 	return raw
@@ -294,20 +318,7 @@ class StorageService {
 		const { mediaMetadataAdapter, mediaAssetsAdapter } =
 			this.getProjectMediaAdapters({ projectId });
 
-		const metadata: MediaAssetData = {
-			id: mediaAsset.id,
-			name: mediaAsset.name,
-			type: mediaAsset.type,
-			size: mediaAsset.file.size,
-			lastModified: mediaAsset.file.lastModified,
-			width: mediaAsset.width,
-			height: mediaAsset.height,
-			duration: mediaAsset.duration,
-			fps: mediaAsset.fps,
-			hasAudio: mediaAsset.hasAudio,
-			thumbnailUrl: mediaAsset.thumbnailUrl,
-			ephemeral: mediaAsset.ephemeral,
-		};
+		const metadata = buildMediaAssetData({ mediaAsset });
 
 		try {
 			await mediaAssetsAdapter.set({
@@ -423,6 +434,83 @@ class StorageService {
 			mediaAssetsAdapter.remove(id),
 			mediaMetadataAdapter.remove(id),
 		]);
+	}
+
+	/**
+	 * Removes a media asset from the project (its metadata) but keeps its stored file, so an undo can bring it
+	 * back: a File read from OPFS is no longer readable once its entry is deleted, and a loaded project's assets
+	 * are exactly such Files. pruneOrphanedMediaFiles frees the file when the project is next loaded.
+	 */
+	async detachMediaAsset({
+		projectId,
+		id,
+	}: {
+		projectId: string;
+		id: string;
+	}): Promise<void> {
+		const { mediaMetadataAdapter } = this.getProjectMediaAdapters({
+			projectId,
+		});
+		await mediaMetadataAdapter.remove(id);
+	}
+
+	/** Undoes detachMediaAsset: rewrites the metadata only when the file is still stored, else saves it all. */
+	async restoreMediaAsset({
+		projectId,
+		mediaAsset,
+	}: {
+		projectId: string;
+		mediaAsset: MediaAsset;
+	}): Promise<void> {
+		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+			this.getProjectMediaAdapters({ projectId });
+
+		const storedFile = await mediaAssetsAdapter.get(mediaAsset.id);
+		if (!storedFile) {
+			await this.saveMediaAsset({ projectId, mediaAsset });
+			return;
+		}
+		await mediaMetadataAdapter.set({
+			key: mediaAsset.id,
+			value: buildMediaAssetData({ mediaAsset }),
+		});
+	}
+
+	/**
+	 * Deletes the stored media files that no metadata points to any more (media removed and never restored, see
+	 * detachMediaAsset). Files modified less than `minAgeMs` ago are kept: an import writes its file before its
+	 * metadata. Returns how many files were deleted.
+	 */
+	async pruneOrphanedMediaFiles({
+		projectId,
+		minAgeMs = ORPHANED_MEDIA_MIN_AGE_MS,
+		now = Date.now(),
+	}: {
+		projectId: string;
+		minAgeMs?: number;
+		now?: number;
+	}): Promise<number> {
+		const { mediaMetadataAdapter, mediaAssetsAdapter } =
+			this.getProjectMediaAdapters({ projectId });
+
+		const [fileIds, metadataIds] = await Promise.all([
+			mediaAssetsAdapter.list(),
+			mediaMetadataAdapter.list(),
+		]);
+		const referenced = new Set(metadataIds);
+		let deleted = 0;
+		for (const id of fileIds) {
+			if (referenced.has(id)) continue;
+			try {
+				const file = await mediaAssetsAdapter.get(id);
+				if (!file || now - file.lastModified < minAgeMs) continue;
+				await mediaAssetsAdapter.remove(id);
+				deleted++;
+			} catch (error) {
+				console.warn("Failed to prune orphaned media file:", id, error);
+			}
+		}
+		return deleted;
 	}
 
 	async deleteProjectMedia({

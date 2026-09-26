@@ -1,0 +1,29 @@
+{
+	"name": "@opencut/bridge",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Local sidecar for the OpenCut Impulsion fork: WebSocket hub for the editor tab, Streamable HTTP MCP server for Claude Code, Agent SDK chat backend, disk file serving and export uploads.",
+	"scripts": {
+		"dev": "node --import tsx src/main.ts",
+		"start": "node --import tsx src/main.ts",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "0.3.282",
+		"@modelcontextprotocol/sdk": "1.30.1",
+		"@opencut/claude-tools": "workspace:*",
+		"express": "^5.2.1",
+		"ws": "^8.18.3",
+		"zod": "4.3.6"
+	},
+	"devDependencies": {
+		"@anthropic-ai/sdk": "^0.128.0",
+		"@types/bun": "latest",
+		"@types/express": "^5.0.6",
+		"@types/node": "^24.2.1",
+		"@types/ws": "^8.18.1",
+		"tsx": "^4.23.15"
+	}
+}

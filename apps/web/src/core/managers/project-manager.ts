@@ -656,36 +656,42 @@ export class ProjectManager {
 	private async updateThumbnailFromTimeline(): Promise<boolean> {
 		if (!this.active) return false;
 
-		const tracks = this.editor.scenes.getActiveScene().tracks;
-		const mediaAssets = this.editor.media.getAssets();
-		const duration = this.editor.timeline.getTotalDuration();
-		const { canvasSize, background } = this.active.settings;
+		// The compositor and video cache are shared with the preview, captures and exports (render mutex).
+		const thumbnailDataUrl = await this.editor.renderer.runExclusive(async () => {
+			if (!this.active) return null;
 
-		const scene = buildScene({
-			tracks,
-			mediaAssets,
-			duration: duration || 1,
-			canvasSize,
-			background,
+			const tracks = this.editor.scenes.getActiveScene().tracks;
+			const mediaAssets = this.editor.media.getAssets();
+			const duration = this.editor.timeline.getTotalDuration();
+			const { canvasSize, background } = this.active.settings;
+
+			const scene = buildScene({
+				tracks,
+				mediaAssets,
+				duration: duration || 1,
+				canvasSize,
+				background,
+			});
+
+			const renderer = new CanvasRenderer({
+				width: canvasSize.width,
+				height: canvasSize.height,
+				fps: this.active.settings.fps,
+			});
+
+			const tempCanvas = document.createElement("canvas");
+			tempCanvas.width = canvasSize.width;
+			tempCanvas.height = canvasSize.height;
+
+			await renderer.renderToCanvas({
+				node: scene,
+				time: 0,
+				targetCanvas: tempCanvas,
+			});
+
+			return tempCanvas.toDataURL("image/png");
 		});
-
-		const renderer = new CanvasRenderer({
-			width: canvasSize.width,
-			height: canvasSize.height,
-			fps: this.active.settings.fps,
-		});
-
-		const tempCanvas = document.createElement("canvas");
-		tempCanvas.width = canvasSize.width;
-		tempCanvas.height = canvasSize.height;
-
-		await renderer.renderToCanvas({
-			node: scene,
-			time: 0,
-			targetCanvas: tempCanvas,
-		});
-
-		const thumbnailDataUrl = tempCanvas.toDataURL("image/png");
+		if (thumbnailDataUrl === null) return false;
 
 		await this.updateThumbnail({ thumbnail: thumbnailDataUrl });
 		return true;

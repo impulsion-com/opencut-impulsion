@@ -5,6 +5,7 @@ import {
 	CanvasSink,
 	type WrappedCanvas,
 } from "mediabunny";
+import { bumpSourceVersion } from "@/services/renderer/source-version";
 
 interface VideoSinkData {
 	input: Input;
@@ -15,6 +16,14 @@ interface VideoSinkData {
 	lastTime: number;
 	prefetching: boolean;
 	prefetchPromise: Promise<void> | null;
+}
+
+/**
+ * The sink draws every decoded frame into one of a few pooled canvases, so the canvas a frame arrives in is often
+ * the one the compositor uploaded before: bump its content version or the GPU keeps showing the old pixels.
+ */
+function markDecoded(frame: WrappedCanvas): void {
+	bumpSourceVersion(frame.canvas);
 }
 
 export class VideoCache {
@@ -136,6 +145,7 @@ export class VideoCache {
 
 					if (done || !frame) break;
 
+					markDecoded(frame);
 					sinkData.currentFrame = frame;
 				}
 
@@ -182,6 +192,7 @@ export class VideoCache {
 			const { value: frame } = await sinkData.iterator.next();
 
 			if (frame) {
+				markDecoded(frame);
 				sinkData.currentFrame = frame;
 				this.startPrefetch({ sinkData });
 				return frame;
@@ -222,6 +233,7 @@ export class VideoCache {
 				return;
 			}
 
+			markDecoded(frame);
 			sinkData.nextFrame = frame;
 			sinkData.prefetching = false;
 			sinkData.prefetchPromise = null;

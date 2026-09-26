@@ -12,6 +12,7 @@ import {
 	isRenderPerfEnabled,
 	recordWasmFrameProfile,
 } from "@/diagnostics/render-perf";
+import { getSourceVersion } from "../source-version";
 import type {
 	ExternalTextureDescriptor,
 	FrameDescriptor,
@@ -35,6 +36,8 @@ type RenderedCacheEntry = {
 type ExternalCacheEntry = {
 	kind: "external";
 	source: CanvasImageSource;
+	/** Content version of `source` when uploaded: pooled video canvases get new pixels without a new identity. */
+	version: number;
 	width: number;
 	height: number;
 };
@@ -98,9 +101,11 @@ class WasmCompositor {
 
 	private syncExternalTexture(texture: ExternalTextureDescriptor) {
 		const previous = this.cache.get(texture.id);
+		const version = getSourceVersion(texture.source);
 		if (
 			previous?.kind === "external" &&
 			previous.source === texture.source &&
+			previous.version === version &&
 			previous.width === texture.width &&
 			previous.height === texture.height
 		) {
@@ -127,6 +132,7 @@ class WasmCompositor {
 		this.cache.set(texture.id, {
 			kind: "external",
 			source: texture.source,
+			version,
 			width: texture.width,
 			height: texture.height,
 		});

@@ -74,6 +74,8 @@ export function useGraphEditorController() {
 				discardPreview();
 				setOpen(false);
 			},
+			// An open popover, not a drag: it must not block edits made from elsewhere.
+			gesture: false,
 		});
 	}, [discardPreview, open]);
 

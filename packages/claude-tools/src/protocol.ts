@@ -110,7 +110,11 @@ export type BridgeErrorPayload = z.infer<typeof BridgeErrorSchema>;
 export const ImportFileSchema = z.object({
 	/** Absolute disk path (the sidecar keeps the mediaId -> path index). */
 	path: z.string().min(1),
-	/** http://127.0.0.1:3457/files?... URL the tab fetches the bytes from (nothing else is accepted). */
+	/**
+	 * URL the tab fetches the bytes from: BRIDGE_ORIGIN + BRIDGE_FILES_PATH, either with a query
+	 * (http://127.0.0.1:3457/files?path=...) or as an opaque id minted by the sidecar
+	 * (http://127.0.0.1:3457/files/<id>, preferred: the disk path never travels in the URL). Nothing else is accepted.
+	 */
 	url: bridgeRouteUrl(BRIDGE_FILES_PATH),
 	name: z.string().min(1),
 	size: z.number().int().min(0),
@@ -176,15 +180,16 @@ export function isInternalMethod(method: string): method is InternalMethod {
 export const CHAT_PROFILES = ["A", "B"] as const;
 export type ChatProfile = (typeof CHAT_PROFILES)[number];
 
-/** Models offered in the chat panel (see map 8.6). The first one is the default. */
+/** Models offered in the chat panel (see map 8.6), in menu order. The first one is the default. */
 export const CHAT_MODELS = [
-	{ id: "claude-opus-5", label: "Opus 5" },
+	{ id: "claude-opus-5-5", label: "Opus 5.5" },
 	{ id: "claude-sonnet-5", label: "Sonnet 5" },
 	{ id: "claude-haiku-4-5", label: "Haiku 4.5" },
-	{ id: "claude-opus-5-5", label: "Opus 5.5" },
 	{ id: "claude-fable-5-1", label: "Fable 5.1" },
+	{ id: "claude-opus-5", label: "Opus 5" },
 ] as const;
-export const DEFAULT_CHAT_MODEL = "claude-opus-5";
+export type ChatModelId = (typeof CHAT_MODELS)[number]["id"];
+export const DEFAULT_CHAT_MODEL = "claude-opus-5-5" satisfies ChatModelId;
 
 export const ChatAttachmentSchema = z.discriminatedUnion("type", [
 	z.object({
@@ -446,7 +451,7 @@ export type ClaimActiveMessage = z.infer<typeof ClaimActiveMessageSchema>;
 // Hub -> tab
 // ---------------------------------------------------------------------------
 
-/** Sent after hello, and again whenever the tab's role changes (the latest tab becomes active). */
+/** Sent after hello, and again whenever the tab's role changes. A hello takes the active role only when no tab holds it (or the dropped active tab returns within the reconnect grace); otherwise the tab is passive until it sends claim-active. */
 export const WelcomeMessageSchema = z.object({
 	type: z.literal("welcome"),
 	protocolVersion: z.number().int(),
