@@ -62,6 +62,47 @@ Un bloc motion est une animation Remotion (titre, sommaire, barre de commande, p
 - Le premier rendu prépare le paquet Remotion (environ 10 s, lancé en tâche de fond au démarrage). Ensuite un bloc de 4 s se rend en 2 à 4 s.
 - Les plans plein écran sont dessinés en 16:9 : ils sont refusés sur un projet vertical.
 
+### Tes propres blocs (packs locaux)
+
+Tu peux ajouter tes blocs sans toucher à ce dépôt : un film de présentation, un habillage à ta charte, avec tes polices et ton logo. Un pack est un projet Remotion ordinaire, dans le dossier de ton choix, avec un fichier `opencut-pack.json` à sa racine. Déclare-le dans `~/.config/opencut-impulsion/config.json` :
+
+```json
+{ "motionPacks": ["~/Movies/mon-film-remotion"] }
+```
+
+```json
+{
+	"name": "Mon film",
+	"entry": "src/index.ts",
+	"publicDir": "public",
+	"blocks": [
+		{
+			"id": "monFilm",
+			"label": "Mon film de présentation",
+			"description": "Trois scènes, textes et durées réglables.",
+			"composition": "Film",
+			"defaultDuration": 9,
+			"minDuration": 3,
+			"opaque": true,
+			"size": { "width": 1920, "height": 1080 },
+			"fps": 60,
+			"durationFields": ["d1", "d2", "d3"],
+			"fields": [
+				{ "key": "title", "label": "Titre", "type": "text", "default": "Bonjour" },
+				{ "key": "d1", "label": "Scène 1 : durée (s)", "type": "number", "default": 3, "min": 1, "max": 12 }
+			]
+		}
+	]
+}
+```
+
+- `entry` est le fichier qui appelle `registerRoot`, `composition` l'identifiant de la composition à rendre. Le pack utilise son propre `node_modules` : installe-y `remotion` dans la même version que ce dépôt (4.0.522).
+- La composition reçoit `{ block, props, durationInFrames, fps, width, height }` en propriétés d'entrée. Elle doit régler sa durée avec `calculateMetadata` et lire ses textes dans `props`.
+- `opaque: true` rend un MP4 sans transparence, bien plus léger, pour un bloc qui remplit l'image. `size` et `fps` figent le format d'une composition dessinée pour un seul format.
+- `durationFields` liste des champs numériques (en secondes) dont la somme est la durée du bloc : une durée par scène, par exemple. Étirer le bloc dans la timeline les allonge tous en proportion.
+- Le fichier est relu à chaque appel et le paquet Remotion est reconstruit quand un fichier du dossier de `entry` a changé : tu modifies ton code, tu cliques sur « Appliquer ».
+- Un pack invalide est ignoré avec un avertissement dans le journal. Un identifiant déjà pris par un bloc fourni est ignoré aussi.
+
 ## Le chat intégré
 
 Chaque fil de discussion (`sessionKey`, choisi par le panneau) a sa propre session Agent SDK de longue durée, qui lance le binaire `claude` installé (`~/.local/bin/claude`, jamais le binaire embarqué du SDK) :
@@ -94,6 +135,7 @@ Tout est optionnel. Fichier `~/.config/opencut-impulsion/config.json` (les clés
 	],
 	"exportsDir": "~/impulsion/videos/exports",
 	"motionDir": "~/impulsion/videos/blocs-motion",
+	"motionPacks": [],
 	"claudePath": "~/.local/bin/claude",
 	"profiles": { "A": "~/.claude", "B": "~/.claude-b" },
 	"defaultProfile": "A",
@@ -107,7 +149,7 @@ Tout est optionnel. Fichier `~/.config/opencut-impulsion/config.json` (les clés
 }
 ```
 
-Les variables d'environnement passent devant le fichier : `OPENCUT_BRIDGE_CONFIG`, `OPENCUT_BRIDGE_ALLOWED_ROOTS` (séparées par `:`), `OPENCUT_BRIDGE_EXPORTS_DIR`, `OPENCUT_BRIDGE_MOTION_DIR`, `OPENCUT_BRIDGE_DATA_DIR`, `OPENCUT_BRIDGE_CLAUDE_PATH`, `OPENCUT_BRIDGE_PROFILE_A`, `OPENCUT_BRIDGE_PROFILE_B`, `OPENCUT_BRIDGE_DEFAULT_PROFILE`, `OPENCUT_BRIDGE_DEFAULT_MODEL`, `OPENCUT_BRIDGE_FFPROBE`, `OPENCUT_BRIDGE_FFMPEG`, `OPENCUT_BRIDGE_LOG_LEVEL`, et `OPENCUT_BRIDGE_PORT` (pour les tests seulement : l'éditeur appelle toujours le port 3457).
+Les variables d'environnement passent devant le fichier : `OPENCUT_BRIDGE_CONFIG`, `OPENCUT_BRIDGE_ALLOWED_ROOTS` (séparées par `:`), `OPENCUT_BRIDGE_EXPORTS_DIR`, `OPENCUT_BRIDGE_MOTION_DIR`, `OPENCUT_BRIDGE_MOTION_PACKS` (séparés par `:`), `OPENCUT_BRIDGE_DATA_DIR`, `OPENCUT_BRIDGE_CLAUDE_PATH`, `OPENCUT_BRIDGE_PROFILE_A`, `OPENCUT_BRIDGE_PROFILE_B`, `OPENCUT_BRIDGE_DEFAULT_PROFILE`, `OPENCUT_BRIDGE_DEFAULT_MODEL`, `OPENCUT_BRIDGE_FFPROBE`, `OPENCUT_BRIDGE_FFMPEG`, `OPENCUT_BRIDGE_LOG_LEVEL`, et `OPENCUT_BRIDGE_PORT` (pour les tests seulement : l'éditeur appelle toujours le port 3457).
 
 ## Modèle de sécurité
 

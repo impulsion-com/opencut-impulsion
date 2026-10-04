@@ -459,6 +459,18 @@ export function createToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 		};
 	}
 
+	/** A block designed at one size or frame rate keeps them; the others follow the project. */
+	function blockFormat(
+		block: { size?: { width: number; height: number }; fps?: number },
+		project: { width: number; height: number; fps: number },
+	): { width: number; height: number; fps: number } {
+		return {
+			width: block.size?.width ?? project.width,
+			height: block.size?.height ?? project.height,
+			fps: block.fps ?? project.fps,
+		};
+	}
+
 	/** The motion entry behind a timeline element, or NOT_FOUND. */
 	async function motionElement(
 		projectId: string,
@@ -569,8 +581,12 @@ export function createToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 				props: input.props ?? {},
 				duration: input.duration,
 			});
-			const format = await projectFormat(ctx.signal);
-			if (resolved.block.fullScreen && format.height > format.width)
+			const format = blockFormat(resolved.block, await projectFormat(ctx.signal));
+			if (
+				resolved.block.fullScreen &&
+				!resolved.block.size &&
+				format.height > format.width
+			)
 				throw new BridgeError({
 					code: "INVALID_PARAMS",
 					message: `Block "${resolved.block.id}" is a full-screen 16:9 shot: it does not fit a vertical canvas yet. Use an overlay block instead.`,
@@ -621,12 +637,14 @@ export function createToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 				input.elementId,
 				ctx.signal,
 			);
+			// For a block with duration fields, new settings decide the length unless a duration is given too.
 			const resolved = motion.resolve({
 				block: entry.block,
 				props: { ...entry.props, ...(input.props ?? {}) },
-				duration: input.duration ?? entry.duration,
+				duration:
+					input.duration ?? (input.props ? undefined : entry.duration),
 			});
-			const format = await projectFormat(ctx.signal);
+			const format = blockFormat(resolved.block, await projectFormat(ctx.signal));
 			const rendered = await renderBlock(
 				{ projectId, ...resolved, ...format },
 				ctx,

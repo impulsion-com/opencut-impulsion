@@ -1,5 +1,9 @@
 import { BRIDGE_ORIGIN } from "@opencut/claude-tools";
-import type { MotionProps } from "@opencut/motion-blocks/catalog";
+import {
+	MOTION_BLOCKS,
+	type MotionBlock,
+	type MotionProps,
+} from "@opencut/motion-blocks/catalog";
 
 // The editor's side of the motion blocks: the settings panel and the "Motion" assets view talk to the sidecar
 // over HTTP (/motion), which renders with Remotion and then edits this tab like any Claude tool call.
@@ -7,7 +11,7 @@ import type { MotionProps } from "@opencut/motion-blocks/catalog";
 const MOTION_URL = `${BRIDGE_ORIGIN}/motion`;
 
 /** Rendered files are named by the sidecar: this is how a video asset is recognised as a block at a glance. */
-const MOTION_FILE_PATTERN = /^bloc-[A-Za-z]+-[0-9a-f]{8}\.webm$/;
+const MOTION_FILE_PATTERN = /^bloc-[A-Za-z][A-Za-z0-9]*-[0-9a-f]{8}\.(webm|mp4)$/;
 
 export function isMotionAssetName(name: string | undefined): boolean {
 	return name !== undefined && MOTION_FILE_PATTERN.test(name);
@@ -96,6 +100,23 @@ async function request<T>({
 	}
 	// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
 	return json as T;
+}
+
+/**
+ * The catalogue as the sidecar sees it: the built-in blocks plus the local packs. Falls back to the built-in
+ * list when the sidecar is offline, so the panel still shows something useful.
+ */
+export async function fetchMotionBlocks(signal?: AbortSignal): Promise<MotionBlock[]> {
+	try {
+		const { blocks } = await request<{ blocks: MotionBlock[] }>({
+			path: "/blocks",
+			signal,
+		});
+		return blocks;
+	} catch (error) {
+		if (error instanceof DOMException && error.name === "AbortError") throw error;
+		return [...MOTION_BLOCKS];
+	}
 }
 
 export function fetchMotionMedia({

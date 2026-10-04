@@ -51,6 +51,8 @@ Un bloc reste modifiable. Sélectionne-le dans la timeline : le panneau de droit
 
 Tu peux aussi le demander à Claude : « ajoute un titre "Devenir Media Buyer" à 3 secondes », « change le texte de la pastille », « fais durer le sommaire 10 secondes ».
 
+Tu peux aussi brancher tes propres animations Remotion comme blocs, depuis un dossier à toi : voir « Tes propres blocs » dans [`apps/bridge/README.md`](apps/bridge/README.md).
+
 Ces blocs sont rendus par Remotion. Remotion est gratuit pour les particuliers et les entreprises de 3 personnes ou moins, payant au-delà : voir [remotion.dev/license](https://remotion.dev/license).
 
 ### Tes dossiers de vidéos

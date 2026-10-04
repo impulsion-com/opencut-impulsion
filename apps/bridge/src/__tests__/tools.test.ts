@@ -111,6 +111,37 @@ beforeAll(async () => {
 	await writeFile(path.join(root, "rushes", ".DS_Store"), "x");
 	await writeFile(path.join(root, ".cache", "c.mp4"), "x");
 	await writeFile(path.join(base, "outside.mp4"), "x");
+	// A local block pack, as a user would write one next to their Remotion project, and a broken one.
+	await mkdir(path.join(base, "pack"), { recursive: true });
+	await writeFile(
+		path.join(base, "pack", "opencut-pack.json"),
+		JSON.stringify({
+			name: "Mon film",
+			entry: "src/index.ts",
+			blocks: [
+				{
+					id: "monFilm",
+					label: "Mon film",
+					composition: "Film",
+					defaultDuration: 6,
+					minDuration: 2,
+					opaque: true,
+					size: { width: 1920, height: 1080 },
+					fps: 60,
+					durationFields: ["d1", "d2"],
+					fields: [
+						{ key: "title", label: "Titre", type: "text", default: "Bonjour" },
+						{ key: "d1", label: "Scène 1", type: "number", default: 2, min: 1, max: 12 },
+						{ key: "d2", label: "Scène 2", type: "number", default: 4, min: 1, max: 12 },
+					],
+				},
+				// Same id as a built-in block: ignored, the built-in one wins.
+				{ id: "cta", label: "Faux", composition: "X", defaultDuration: 1, minDuration: 1, fields: [] },
+			],
+		}),
+	);
+	await mkdir(path.join(base, "broken-pack"), { recursive: true });
+	await writeFile(path.join(base, "broken-pack", "opencut-pack.json"), "{ not json");
 });
 
 afterAll(async () => {
@@ -129,6 +160,7 @@ beforeEach(() => {
 	const motion = createMotionService({
 		dataDir: path.join(base, "data"),
 		motionDir,
+		packs: [path.join(base, "pack"), path.join(base, "broken-pack")],
 		logger: silentLogger,
 		// Stands in for Remotion: writes a file where the real renderer would.
 		renderer: async (request) => {
@@ -838,5 +870,53 @@ describe("motion blocks", () => {
 		}));
 		expect(await code("update_motion_block", { elementId: "el-9", duration: 2 })).toBe("NOT_FOUND");
 		expect(renders).toEqual([]);
+	});
+});
+
+describe("local motion packs", () => {
+	const editorState = {
+		json: { project: { canvas: { width: 1080, height: 1920 }, fps: 30 } },
+	};
+
+	test("a pack's blocks join the catalogue; a broken pack and a clashing id are ignored", async () => {
+		const result = await registry.run("list_motion_blocks", {}, mcpOrigin);
+		const blocks = (result.json as { blocks: Array<{ id: string; pack?: string; label: string }> }).blocks;
+		expect(blocks.find((block) => block.id === "monFilm")).toMatchObject({ pack: "Mon film" });
+		expect(blocks.filter((block) => block.id === "cta")).toHaveLength(1);
+		expect(blocks.find((block) => block.id === "cta")?.label).not.toBe("Faux");
+	});
+
+	test("a pack block renders at its own format, as an mp4, and lasts the sum of its duration fields", async () => {
+		fake.responses.set("get_editor_state", async () => editorState);
+		fake.responses.set("internal.import_files", async (params) => ({
+			json: {
+				imported: [
+					{ path: (params as { files: Array<{ path: string }> }).files[0]?.path, mediaId: "m-film" },
+				],
+				elementIds: ["el-film"],
+				skipped: [],
+			},
+		}));
+		const added = await registry.run(
+			"add_motion_block",
+			{ block: "monFilm", props: { d2: 5 }, start: 0 },
+			mcpOrigin,
+		);
+		// The vertical 30 fps project does not change a block designed in 1920x1080 at 60 fps.
+		expect(renders[0]).toMatchObject({ block: "monFilm", duration: 7, width: 1920, fps: 60 });
+		expect(added.json).toMatchObject({ duration: 7 });
+		const importCall = fake.calls.find((call) => call.method === "internal.import_files");
+		expect((importCall?.params as { files: Array<{ name: string }> }).files[0]?.name).toMatch(
+			/^bloc-monFilm-[0-9a-f]{8}\.mp4$/,
+		);
+
+		// Stretched by the handle: only a duration comes in, and the parts are rescaled to match it.
+		fake.responses.set("get_element", async () => ({ json: { id: "el-film", mediaId: "m-film" } }));
+		const stretched = await registry.run(
+			"update_motion_block",
+			{ elementId: "el-film", duration: 14 },
+			mcpOrigin,
+		);
+		expect(stretched.json).toMatchObject({ duration: 14, props: { d1: 4, d2: 10, title: "Bonjour" } });
 	});
 });

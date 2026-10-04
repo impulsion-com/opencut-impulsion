@@ -128,6 +128,7 @@ export function createBridgeServer({
 	const motion = createMotionService({
 		dataDir: config.dataDir,
 		motionDir: config.motionDir,
+		packs: config.motionPacks,
 		logger: logger.child("motion"),
 	});
 	const registry = createToolRegistry({

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
 	clampMotionDuration,
-	getMotionBlock,
+	sumDurationFields,
+	type MotionBlock,
 	type MotionProps,
 } from "@opencut/motion-blocks/catalog";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import type { VideoElement } from "@/timeline";
 import { mediaTimeToSeconds } from "@/wasm";
 import {
 	describeMotionError,
+	fetchMotionBlocks,
 	fetchMotionMedia,
 	updateMotionBlock,
 	type MotionMediaInfo,
@@ -30,7 +32,7 @@ import { MotionFields } from "./motion-fields";
 type Loaded =
 	| { status: "loading" }
 	| { status: "error"; message: string }
-	| { status: "ready"; info: MotionMediaInfo };
+	| { status: "ready"; info: MotionMediaInfo; block: MotionBlock | undefined };
 
 function round2(value: number): number {
 	return Math.round(value * 100) / 100;
@@ -49,9 +51,16 @@ export function MotionTab({ element }: { element: VideoElement }) {
 	useEffect(() => {
 		const controller = new AbortController();
 		setLoaded({ status: "loading" });
-		fetchMotionMedia({ mediaId: element.mediaId, signal: controller.signal })
-			.then((info) => {
-				setLoaded({ status: "ready", info });
+		Promise.all([
+			fetchMotionMedia({ mediaId: element.mediaId, signal: controller.signal }),
+			fetchMotionBlocks(controller.signal),
+		])
+			.then(([info, blocks]) => {
+				setLoaded({
+					status: "ready",
+					info,
+					block: blocks.find((candidate) => candidate.id === info.block),
+				});
 				setDraft(info.props);
 			})
 			.catch((error: unknown) => {
@@ -72,8 +81,7 @@ export function MotionTab({ element }: { element: VideoElement }) {
 		return <p className="text-muted-foreground p-4 text-sm">{loaded.message}</p>;
 	}
 
-	const { info } = loaded;
-	const block = getMotionBlock(info.block);
+	const { info, block } = loaded;
 	if (!block) {
 		return (
 			<p className="text-muted-foreground p-4 text-sm">
@@ -82,10 +90,15 @@ export function MotionTab({ element }: { element: VideoElement }) {
 		);
 	}
 
+	// A block with duration fields (one per scene) has no global duration to type: it is their sum.
+	const fieldsDuration = sumDurationFields(block, draft);
 	const parsedDuration = Number.parseFloat(duration.replace(",", "."));
-	const nextDuration = Number.isFinite(parsedDuration)
-		? round2(clampMotionDuration(block, parsedDuration))
-		: round2(info.duration);
+	const nextDuration =
+		fieldsDuration !== null
+			? round2(clampMotionDuration(block, fieldsDuration))
+			: Number.isFinite(parsedDuration)
+				? round2(clampMotionDuration(block, parsedDuration))
+				: round2(info.duration);
 	const changed =
 		JSON.stringify(draft) !== JSON.stringify(info.props) ||
 		Math.abs(nextDuration - info.duration) > 0.02;
@@ -96,9 +109,9 @@ export function MotionTab({ element }: { element: VideoElement }) {
 			const result = await updateMotionBlock({
 				elementId: element.id,
 				props: draft,
-				duration: nextDuration,
+				...(fieldsDuration === null ? { duration: nextDuration } : {}),
 			});
-			setLoaded({ status: "ready", info: result });
+			setLoaded({ status: "ready", info: result, block });
 			setDraft(result.props);
 		} catch (error) {
 			toast.error("Le bloc n'a pas pu être recalculé", {
@@ -122,18 +135,25 @@ export function MotionTab({ element }: { element: VideoElement }) {
 						onChange={setDraft}
 						disabled={busy}
 					/>
-					<SectionField label="Durée (secondes)">
-						<Input
-							value={duration}
-							inputMode="decimal"
-							disabled={busy}
-							onChange={(event) => setDuration(event.target.value)}
-						/>
+					{fieldsDuration === null ? (
+						<SectionField label="Durée (secondes)">
+							<Input
+								value={duration}
+								inputMode="decimal"
+								disabled={busy}
+								onChange={(event) => setDuration(event.target.value)}
+							/>
+							<p className="text-muted-foreground text-xs">
+								Tu peux aussi étirer ou raccourcir le bloc dans la timeline : il se recale
+								tout seul sur sa nouvelle durée.
+							</p>
+						</SectionField>
+					) : (
 						<p className="text-muted-foreground text-xs">
-							Tu peux aussi étirer ou raccourcir le bloc dans la timeline : il se recale tout
-							seul sur sa nouvelle durée.
+							Durée totale : {nextDuration} s (la somme des durées ci-dessus). Étirer le bloc
+							dans la timeline allonge toutes les parties en proportion.
 						</p>
-					</SectionField>
+					)}
 					<Button onClick={apply} disabled={busy || !changed}>
 						{busy ? "Rendu en cours…" : "Appliquer"}
 					</Button>

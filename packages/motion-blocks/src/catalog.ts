@@ -39,6 +39,18 @@ export interface MotionBlock {
 	/** Full-screen opaque shot (covers the picture) instead of a transparent overlay. */
 	fullScreen: boolean;
 	fields: MotionField[];
+	/**
+	 * Number fields (seconds) whose sum IS the block's duration, e.g. one per scene of a film. The settings
+	 * panel then edits those instead of one global duration, and a stretch scales them all in proportion.
+	 */
+	durationFields?: string[];
+	/** Rendered without an alpha channel (H.264 MP4, much lighter): for blocks that fill the frame anyway. */
+	opaque?: boolean;
+	/** Fixed render size and frame rate, for a composition designed at one format. Default: the project's. */
+	size?: { width: number; height: number };
+	fps?: number;
+	/** Set by the sidecar for a block that comes from a local pack (see apps/bridge/README.md). */
+	pack?: string;
 }
 
 export const MOTION_MAX_DURATION = 60;
@@ -405,6 +417,48 @@ export function normalizeMotionProps(
 
 export function clampMotionDuration(block: MotionBlock, seconds: number): number {
 	return Math.min(MOTION_MAX_DURATION, Math.max(block.minDuration, seconds));
+}
+
+/** Sum of the block's duration fields, or null when the block has a single global duration. */
+export function sumDurationFields(block: MotionBlock, props: MotionProps): number | null {
+	if (!block.durationFields || block.durationFields.length === 0) return null;
+	let total = 0;
+	for (const key of block.durationFields) {
+		const value = props[key];
+		total += typeof value === "number" ? value : 0;
+	}
+	return total;
+}
+
+/**
+ * Settings and duration that agree with each other. For a block with duration fields: an explicit `duration`
+ * (the element was stretched) rescales every field in proportion, otherwise the duration is their sum.
+ */
+export function resolveMotionTiming({
+	block,
+	props,
+	duration,
+}: {
+	block: MotionBlock;
+	props: MotionProps;
+	duration?: number;
+}): { props: MotionProps; duration: number } {
+	const sum = sumDurationFields(block, props);
+	if (sum === null || !block.durationFields) {
+		return {
+			props,
+			duration: clampMotionDuration(block, duration ?? block.defaultDuration),
+		};
+	}
+	const target = clampMotionDuration(block, duration ?? sum);
+	if (sum <= 0 || Math.abs(target - sum) < 0.005) return { props, duration: target };
+	const scaled: MotionProps = { ...props };
+	for (const key of block.durationFields) {
+		const value = props[key];
+		if (typeof value === "number")
+			scaled[key] = Math.round(((value * target) / sum) * 100) / 100;
+	}
+	return { props: scaled, duration: target };
 }
 
 export function defaultMotionProps(block: MotionBlock): MotionProps {

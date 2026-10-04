@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
-	clampMotionDuration,
-	getMotionBlock,
 	MOTION_BLOCKS,
 	MotionPropsError,
 	normalizeMotionProps,
+	resolveMotionTiming,
 	type MotionBlock,
 	type MotionProps,
 } from "@opencut/motion-blocks/catalog";
+import type { MotionSource } from "@opencut/motion-blocks/render";
 import { z } from "zod";
 import { BridgeError } from "./errors";
 import type { Logger } from "./log";
@@ -49,6 +50,95 @@ const IndexSchema = z.object({
 	entries: z.record(z.string(), EntrySchema),
 });
 
+/** File a local pack declares its blocks in, at the root of the pack folder. */
+export const PACK_FILE = "opencut-pack.json";
+
+// A field of a pack block, checked loosely here; normalizeMotionProps does the real validation of values.
+const PackFieldSchema: z.ZodType<unknown> = z.lazy(() =>
+	z.looseObject({
+		key: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,59}$/),
+		label: z.string().min(1).max(120),
+		type: z.enum(["text", "textarea", "number", "select", "list"]),
+		default: z.union([
+			z.string(),
+			z.number(),
+			z.array(z.record(z.string(), z.union([z.string(), z.number()]))),
+		]),
+		item: z.array(PackFieldSchema).optional(),
+	}),
+);
+
+const PackSchema = z.looseObject({
+	name: z.string().min(1).max(80),
+	/** Remotion entry, relative to the pack folder (the file that calls registerRoot). */
+	entry: z.string().min(1),
+	publicDir: z.string().min(1).optional(),
+	blocks: z
+		.array(
+			z.looseObject({
+				id: z.string().regex(/^[A-Za-z][A-Za-z0-9]{0,39}$/),
+				label: z.string().min(1).max(120),
+				description: z.string().max(400).default(""),
+				composition: z.string().min(1),
+				defaultDuration: z.number().positive(),
+				minDuration: z.number().positive(),
+				fullScreen: z.boolean().default(true),
+				opaque: z.boolean().optional(),
+				durationFields: z.array(z.string()).optional(),
+				size: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+				fps: z.number().positive().optional(),
+				fields: z.array(PackFieldSchema),
+			}),
+		)
+		.min(1),
+});
+
+interface LoadedBlock {
+	block: MotionBlock;
+	source?: MotionSource;
+}
+
+/** Reads the packs' block lists. A broken pack is skipped with a warning: it must not take the editor down. */
+function loadPackBlocks(packs: readonly string[], logger: Logger): LoadedBlock[] {
+	const loaded: LoadedBlock[] = [];
+	const taken = new Set(MOTION_BLOCKS.map((block) => block.id));
+	for (const dir of packs) {
+		const file = path.join(dir, PACK_FILE);
+		if (!existsSync(file)) {
+			logger.warn("motion pack ignored (no opencut-pack.json)", { dir });
+			continue;
+		}
+		let parsed: z.infer<typeof PackSchema>;
+		try {
+			parsed = PackSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+		} catch (error) {
+			logger.warn("motion pack ignored (invalid opencut-pack.json)", {
+				dir,
+				error: error instanceof Error ? error.message.slice(0, 300) : String(error),
+			});
+			continue;
+		}
+		for (const { composition, ...definition } of parsed.blocks) {
+			if (taken.has(definition.id)) {
+				logger.warn("motion pack block ignored (id already used)", { dir, id: definition.id });
+				continue;
+			}
+			taken.add(definition.id);
+			loaded.push({
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+				block: { ...definition, pack: parsed.name } as unknown as MotionBlock,
+				source: {
+					entry: path.resolve(dir, parsed.entry),
+					publicDir: path.resolve(dir, parsed.publicDir ?? "public"),
+					composition,
+					watchDir: path.dirname(path.resolve(dir, parsed.entry)),
+				},
+			});
+		}
+	}
+	return loaded;
+}
+
 export interface MotionRenderRequest {
 	projectId: string;
 	block: MotionBlock;
@@ -57,6 +147,8 @@ export interface MotionRenderRequest {
 	fps: number;
 	width: number;
 	height: number;
+	/** Set for a block that comes from a local pack. */
+	source?: MotionSource;
 	onProgress?: (progress: number) => void;
 	signal?: AbortSignal;
 }
@@ -74,6 +166,7 @@ export interface MotionService {
 		block: MotionBlock;
 		props: MotionProps;
 		duration: number;
+		source?: MotionSource;
 	};
 	render(
 		request: MotionRenderRequest,
@@ -95,6 +188,8 @@ const remotionRenderer: MotionRenderer = async (request) => {
 		width: request.width,
 		height: request.height,
 		outputPath: request.outputPath,
+		definition: request.block,
+		...(request.source ? { source: request.source } : {}),
 		onProgress: request.onProgress,
 		signal: request.signal,
 	});
@@ -104,6 +199,7 @@ const remotionRenderer: MotionRenderer = async (request) => {
 export function createMotionService({
 	dataDir,
 	motionDir,
+	packs = [],
 	logger,
 	renderer = remotionRenderer,
 	prewarm = () =>
@@ -114,6 +210,8 @@ export function createMotionService({
 }: {
 	dataDir: string;
 	motionDir: string;
+	/** Folders of local block packs (each holds an opencut-pack.json). */
+	packs?: readonly string[];
 	logger: Logger;
 	renderer?: MotionRenderer;
 	prewarm?: () => Promise<boolean>;
@@ -146,21 +244,35 @@ export function createMotionService({
 		return empty;
 	}
 
+	// Packs are read again on every call: their author edits them while the sidecar runs.
+	const allBlocks = (): LoadedBlock[] => [
+		...MOTION_BLOCKS.map((block) => ({ block })),
+		...loadPackBlocks(packs, logger),
+	];
+
 	return {
-		blocks: MOTION_BLOCKS,
+		get blocks() {
+			return allBlocks().map((entry) => entry.block);
+		},
 
 		resolve({ block: blockId, props, duration }) {
-			const block = getMotionBlock(blockId);
-			if (!block)
+			const all = allBlocks();
+			const found = all.find((entry) => entry.block.id === blockId);
+			if (!found)
 				throw new BridgeError({
 					code: "INVALID_PARAMS",
-					message: `Unknown motion block "${blockId}". Known: ${MOTION_BLOCKS.map((b) => b.id).join(", ")}.`,
+					message: `Unknown motion block "${blockId}". Known: ${all.map((entry) => entry.block.id).join(", ")}.`,
 				});
+			const { block, source } = found;
 			try {
 				return {
 					block,
-					props: normalizeMotionProps(block, props),
-					duration: clampMotionDuration(block, duration ?? block.defaultDuration),
+					...resolveMotionTiming({
+						block,
+						props: normalizeMotionProps(block, props),
+						duration,
+					}),
+					...(source ? { source } : {}),
 				};
 			} catch (error) {
 				if (error instanceof MotionPropsError)
@@ -178,7 +290,7 @@ export function createMotionService({
 				await mkdir(folder, { recursive: true });
 				const file = path.join(
 					folder,
-					`bloc-${request.block.id}-${randomUUID().slice(0, 8)}.webm`,
+					`bloc-${request.block.id}-${randomUUID().slice(0, 8)}.${request.block.opaque ? "mp4" : "webm"}`,
 				);
 				const startedAt = Date.now();
 				const { duration } = await renderer({ ...request, outputPath: file });
