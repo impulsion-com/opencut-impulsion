@@ -12,7 +12,7 @@ Il héberge quatre choses sur le même port :
 | `GET /files/<id>` et `POST /exports/<jobId>` | Le service des fichiers du disque pour les imports, et la réception des exports rendus par l'onglet.                            |
 | `GET /health`                                | L'état : version, onglet connecté, projet ouvert, sessions MCP et chat.                                                         |
 
-Les 27 outils sont définis une seule fois dans `packages/claude-tools` (le contrat) et enregistrés deux fois avec le même registre (`src/tools.ts`) : sur le serveur MCP HTTP pour Claude Code, et sur le serveur MCP en mémoire du chat. Les outils « tab » sont relayés tels quels à l'onglet ; `list_disk_media`, `import_media`, `start_export`, `job_status` et `cancel_job` sont gérés ici (disque, tâches de fond), et `list_media` est enrichi du chemin disque des médias importés.
+Les 30 outils sont définis une seule fois dans `packages/claude-tools` (le contrat) et enregistrés deux fois avec le même registre (`src/tools.ts`) : sur le serveur MCP HTTP pour Claude Code, et sur le serveur MCP en mémoire du chat. Les outils « tab » sont relayés tels quels à l'onglet ; `list_disk_media`, `import_media`, `start_export`, `job_status`, `cancel_job` et les trois outils des blocs motion sont gérés ici (disque, tâches de fond, rendu Remotion), et `list_media` est enrichi du chemin disque des médias importés.
 
 ## Démarrer
 
@@ -52,6 +52,16 @@ Un seul onglet pilote l'éditeur. Un onglet qui se recharge garde ce rôle 5 s (
 
 Sans onglet connecté, les outils de l'éditeur répondent proprement `EDITOR_NOT_CONNECTED` (avec la consigne d'ouvrir `http://localhost:3456`), sans rien casser. Si l'onglet vient de se recharger, l'appel attend jusqu'à 5 s qu'il revienne.
 
+## Les blocs motion
+
+Un bloc motion est une animation Remotion (titre, sommaire, barre de commande, pile de cartes, notifications, appel à l'action, plans plein écran) rendue ici avec un fond transparent, puis posée sur la timeline comme une vidéo. Le catalogue et les compositions vivent dans `packages/motion-blocks`.
+
+- `list_motion_blocks` donne le catalogue et les réglages de chaque bloc, `add_motion_block` rend un bloc au format du projet et le place, `update_motion_block` le rend à nouveau avec d'autres textes ou une autre durée. L'élément garde sa place, sa piste, ses transformations et ses images clés. Chaque appel est une seule étape d'annulation.
+- Les rendus sont écrits dans `motionDir` (par défaut un dossier `blocs-motion` à côté des exports). Ce qui a produit chaque rendu (bloc, réglages, durée) est noté dans `<dataDir>/projects/<projectId>/motion-index.json` : c'est ce qui rend un bloc modifiable après coup. Sans ce fichier, le bloc reste une vidéo ordinaire.
+- L'éditeur appelle les mêmes fonctions par HTTP pour son panneau de réglages : `GET /motion/blocks`, `GET /motion/media/<mediaId>`, `POST /motion/add`, `POST /motion/update`. Comme `/files`, ces routes n'acceptent que l'origine de l'éditeur.
+- Le premier rendu prépare le paquet Remotion (environ 10 s, lancé en tâche de fond au démarrage). Ensuite un bloc de 4 s se rend en 2 à 4 s.
+- Les plans plein écran sont dessinés en 16:9 : ils sont refusés sur un projet vertical.
+
 ## Le chat intégré
 
 Chaque fil de discussion (`sessionKey`, choisi par le panneau) a sa propre session Agent SDK de longue durée, qui lance le binaire `claude` installé (`~/.local/bin/claude`, jamais le binaire embarqué du SDK) :
@@ -83,6 +93,7 @@ Tout est optionnel. Fichier `~/.config/opencut-impulsion/config.json` (les clés
 		"/Volumes"
 	],
 	"exportsDir": "~/impulsion/videos/exports",
+	"motionDir": "~/impulsion/videos/blocs-motion",
 	"claudePath": "~/.local/bin/claude",
 	"profiles": { "A": "~/.claude", "B": "~/.claude-b" },
 	"defaultProfile": "A",
@@ -96,7 +107,7 @@ Tout est optionnel. Fichier `~/.config/opencut-impulsion/config.json` (les clés
 }
 ```
 
-Les variables d'environnement passent devant le fichier : `OPENCUT_BRIDGE_CONFIG`, `OPENCUT_BRIDGE_ALLOWED_ROOTS` (séparées par `:`), `OPENCUT_BRIDGE_EXPORTS_DIR`, `OPENCUT_BRIDGE_DATA_DIR`, `OPENCUT_BRIDGE_CLAUDE_PATH`, `OPENCUT_BRIDGE_PROFILE_A`, `OPENCUT_BRIDGE_PROFILE_B`, `OPENCUT_BRIDGE_DEFAULT_PROFILE`, `OPENCUT_BRIDGE_DEFAULT_MODEL`, `OPENCUT_BRIDGE_FFPROBE`, `OPENCUT_BRIDGE_FFMPEG`, `OPENCUT_BRIDGE_LOG_LEVEL`, et `OPENCUT_BRIDGE_PORT` (pour les tests seulement : l'éditeur appelle toujours le port 3457).
+Les variables d'environnement passent devant le fichier : `OPENCUT_BRIDGE_CONFIG`, `OPENCUT_BRIDGE_ALLOWED_ROOTS` (séparées par `:`), `OPENCUT_BRIDGE_EXPORTS_DIR`, `OPENCUT_BRIDGE_MOTION_DIR`, `OPENCUT_BRIDGE_DATA_DIR`, `OPENCUT_BRIDGE_CLAUDE_PATH`, `OPENCUT_BRIDGE_PROFILE_A`, `OPENCUT_BRIDGE_PROFILE_B`, `OPENCUT_BRIDGE_DEFAULT_PROFILE`, `OPENCUT_BRIDGE_DEFAULT_MODEL`, `OPENCUT_BRIDGE_FFPROBE`, `OPENCUT_BRIDGE_FFMPEG`, `OPENCUT_BRIDGE_LOG_LEVEL`, et `OPENCUT_BRIDGE_PORT` (pour les tests seulement : l'éditeur appelle toujours le port 3457).
 
 ## Modèle de sécurité
 

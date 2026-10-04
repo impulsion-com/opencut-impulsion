@@ -25,6 +25,7 @@ import type { EditorHub } from "./hub";
 import { isFinished, type JobTable, type ToolOrigin } from "./jobs";
 import type { Logger } from "./log";
 import type { MediaIndex, MediaIndexEntry } from "./media-index";
+import type { MotionService } from "./motion";
 import { mediaTypeOf } from "./media-types";
 import { toCallToolResult, toErrorCallToolResult } from "./mcp-result";
 import type { Prober } from "./probe";
@@ -73,6 +74,7 @@ export interface ToolRegistryDeps {
 	files: FileRegistry;
 	uploads: Pick<ExportUploads, "abort">;
 	mediaIndex: MediaIndex;
+	motion: MotionService;
 	prober: Prober | null;
 	config: Pick<BridgeConfig, "allowedRoots" | "exportsDir">;
 	logger: Logger;
@@ -183,8 +185,17 @@ async function untilAborted<T>(
 }
 
 export function createToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
-	const { hub, jobs, files, uploads, mediaIndex, prober, config, logger } =
-		deps;
+	const {
+		hub,
+		jobs,
+		files,
+		uploads,
+		mediaIndex,
+		motion,
+		prober,
+		config,
+		logger,
+	} = deps;
 	const now = deps.now ?? (() => new Date());
 	/** Real path -> id of the running import job copying it. */
 	const importsInFlight = new Map<string, string>();
@@ -263,6 +274,251 @@ export function createToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 		return { ...result, json };
 	};
 
+	/** import_media, plus the internal `replace` used by update_motion_block (swap the media of one element). */
+	async function importFromDisk(
+		input: ToolInput<"import_media"> & {
+			replace?: { elementId: string; removeMediaId?: string };
+		},
+		ctx: ToolCallContext,
+	): Promise<ToolResult> {
+		const projectId = requireProject();
+		const skipped: Array<{ path: string; reason: string }> = [];
+		const byRealPath = new Map<
+			string,
+			{
+				path: string;
+				url: string;
+				name: string;
+				size: number;
+				mimeType: string;
+				lastModified: number;
+				mtimeMs: number;
+			}
+		>();
+		for (const requested of input.paths) {
+			try {
+				const file = await files.registerFile(requested);
+				if (!mediaTypeOf(file.path)) {
+					skipped.push({
+						path: requested,
+						reason: "unsupported file type (video, audio or image expected)",
+					});
+					continue;
+				}
+				if (byRealPath.has(file.path)) {
+					skipped.push({ path: requested, reason: "listed twice" });
+					continue;
+				}
+				const runningJobId = importsInFlight.get(file.path);
+				if (runningJobId) {
+					skipped.push({
+						path: requested,
+						reason: `already being imported by job ${runningJobId}: wait for it with job_status, then list_media`,
+					});
+					continue;
+				}
+				byRealPath.set(file.path, {
+					path: file.path,
+					url: file.url,
+					name: file.name,
+					size: file.size,
+					mimeType: file.mimeType,
+					lastModified: Math.round(file.mtimeMs),
+					mtimeMs: file.mtimeMs,
+				});
+			} catch (error) {
+				if (!(error instanceof FileAccessError)) throw error;
+				skipped.push({ path: requested, reason: error.message });
+			}
+		}
+		if (byRealPath.size === 0) return { json: { imported: [], skipped } };
+
+		const job = jobs.create({
+			kind: "import",
+			origin: ctx.origin,
+			projectId,
+			status: "running",
+		});
+		const importFiles = [...byRealPath.values()].map(
+			({ mtimeMs: _mtimeMs, ...file }) => file,
+		);
+		logger.info("import started", {
+			jobId: job.id,
+			files: importFiles.length,
+			projectId,
+		});
+
+		// A retry while this import runs (a client that gave up) must not copy the same files a second time.
+		for (const realPath of byRealPath.keys()) importsInFlight.set(realPath, job.id);
+
+		// Not tied to ctx.signal: if the MCP client gives up, the tab keeps importing and the index is still
+		// recorded when it answers.
+		const work = hub
+			.call(
+				"internal.import_files",
+				{
+					jobId: job.id,
+					files: importFiles,
+					...(input.place ? { place: input.place } : {}),
+					...(input.replace ? { replace: input.replace } : {}),
+				},
+				{ projectId, timeoutMs: IMPORT_TIMEOUT_MS },
+			)
+			.then(async (result) => {
+				const parsed = ImportResultSchema.safeParse(result.json);
+				if (parsed.success) {
+					const importedAt = now().toISOString();
+					const entries: Record<string, MediaIndexEntry> = {};
+					for (const item of parsed.data.imported) {
+						const source = byRealPath.get(item.path);
+						if (source)
+							entries[item.mediaId] = {
+								path: source.path,
+								size: source.size,
+								mtimeMs: source.mtimeMs,
+								importedAt,
+							};
+					}
+					if (Object.keys(entries).length > 0) {
+						await mediaIndex
+							.record(projectId, entries)
+							.catch((error: unknown) => {
+								logger.error("could not write the media index", {
+									projectId,
+									error: errorMessage(error),
+								});
+							});
+					}
+				} else {
+					logger.warn(
+						"unexpected import result shape (media index not updated)",
+						{ jobId: job.id },
+					);
+				}
+				jobs.finish(job.id, { status: "done", result: result.json });
+				return result;
+			})
+			.catch((error: unknown) => {
+				const bridgeError = toBridgeError(error);
+				jobs.finish(job.id, {
+					status: "failed",
+					error: `${bridgeError.code}: ${bridgeError.message}`,
+				});
+				throw bridgeError;
+			})
+			.finally(() => {
+				for (const realPath of byRealPath.keys()) {
+					if (importsInFlight.get(realPath) === job.id)
+						importsInFlight.delete(realPath);
+				}
+			});
+		work.catch(() => {});
+
+		const stopProgress = relayJobProgress({
+			jobs,
+			jobId: job.id,
+			report: ctx.reportProgress,
+		});
+		let result: ToolResult;
+		try {
+			result = await untilAborted(work, ctx.signal);
+		} finally {
+			stopProgress();
+		}
+		const parsed = ImportResultSchema.safeParse(result.json);
+		if (!parsed.success) return result;
+		const json = {
+			...(result.json as Record<string, unknown>),
+			skipped: [...skipped, ...(parsed.data.skipped ?? [])],
+		};
+		return { ...result, json };
+	}
+
+	/** Canvas and frame rate of the open project: a block is rendered to match them. */
+	async function projectFormat(
+		signal?: AbortSignal,
+	): Promise<{ width: number; height: number; fps: number }> {
+		const state = await hub.call("get_editor_state", {}, { signal });
+		const parsed = z
+			.looseObject({
+				project: z.looseObject({
+					canvas: z.looseObject({ width: z.number(), height: z.number() }),
+					fps: z.number(),
+				}),
+			})
+			.safeParse(state.json);
+		if (!parsed.success)
+			throw new BridgeError({
+				code: "INTERNAL",
+				message: "Could not read the project canvas and fps from the editor.",
+			});
+		return {
+			width: parsed.data.project.canvas.width,
+			height: parsed.data.project.canvas.height,
+			fps: parsed.data.project.fps,
+		};
+	}
+
+	/** The motion entry behind a timeline element, or NOT_FOUND. */
+	async function motionElement(
+		projectId: string,
+		elementId: string,
+		signal?: AbortSignal,
+	) {
+		const element = await hub.call("get_element", { elementId }, { signal });
+		const mediaId: unknown =
+			typeof element.json === "object" && element.json !== null
+				? Reflect.get(element.json, "mediaId")
+				: undefined;
+		const entry =
+			typeof mediaId === "string"
+				? (await motion.read(projectId))[mediaId]
+				: undefined;
+		if (typeof mediaId !== "string" || !entry)
+			throw new BridgeError({
+				code: "NOT_FOUND",
+				message: `Element "${elementId}" is not a motion block (only elements made by add_motion_block can be updated).`,
+			});
+		return { mediaId, entry };
+	}
+
+	/** Renders, relaying the progress as the first 85 % of the call (the import is the rest). */
+	function renderBlock(
+		request: Parameters<MotionService["render"]>[0],
+		ctx: ToolCallContext,
+	) {
+		return motion.render({
+			...request,
+			signal: ctx.signal,
+			onProgress: (progress) =>
+				ctx.reportProgress?.({
+					progress: progress * 0.85,
+					message: "Rendu du bloc motion",
+				}),
+		});
+	}
+
+	function firstImported(result: ToolResult): {
+		mediaId: string;
+		elementId?: string;
+	} {
+		const parsed = z
+			.looseObject({
+				imported: z.array(z.looseObject({ mediaId: z.string() })).min(1),
+				elementIds: z.array(z.string()).optional(),
+			})
+			.safeParse(result.json);
+		if (!parsed.success)
+			throw new BridgeError({
+				code: "INTERNAL",
+				message: `The rendered block could not be added to the project: ${JSON.stringify(result.json).slice(0, 300)}`,
+			});
+		const imported = parsed.data.imported[0];
+		if (!imported)
+			throw new BridgeError({ code: "INTERNAL", message: "Empty import." });
+		return { mediaId: imported.mediaId, elementId: parsed.data.elementIds?.[0] };
+	}
+
 	const sidecarHandlers: {
 		[N in HybridToolName | SidecarToolName]: Handler<N>;
 	} = {
@@ -282,157 +538,127 @@ export function createToolRegistry(deps: ToolRegistryDeps): ToolRegistry {
 			return { json: listing };
 		},
 
-		async import_media(input, ctx) {
+		import_media: (input, ctx) => importFromDisk(input, ctx),
+
+		async list_motion_blocks(input, ctx) {
+			if (input.elementId === undefined) return { json: { blocks: motion.blocks } };
 			const projectId = requireProject();
-			const skipped: Array<{ path: string; reason: string }> = [];
-			const byRealPath = new Map<
-				string,
-				{
-					path: string;
-					url: string;
-					name: string;
-					size: number;
-					mimeType: string;
-					lastModified: number;
-					mtimeMs: number;
-				}
-			>();
-			for (const requested of input.paths) {
-				try {
-					const file = await files.registerFile(requested);
-					if (!mediaTypeOf(file.path)) {
-						skipped.push({
-							path: requested,
-							reason: "unsupported file type (video, audio or image expected)",
-						});
-						continue;
-					}
-					if (byRealPath.has(file.path)) {
-						skipped.push({ path: requested, reason: "listed twice" });
-						continue;
-					}
-					const runningJobId = importsInFlight.get(file.path);
-					if (runningJobId) {
-						skipped.push({
-							path: requested,
-							reason: `already being imported by job ${runningJobId}: wait for it with job_status, then list_media`,
-						});
-						continue;
-					}
-					byRealPath.set(file.path, {
-						path: file.path,
-						url: file.url,
-						name: file.name,
-						size: file.size,
-						mimeType: file.mimeType,
-						lastModified: Math.round(file.mtimeMs),
-						mtimeMs: file.mtimeMs,
-					});
-				} catch (error) {
-					if (!(error instanceof FileAccessError)) throw error;
-					skipped.push({ path: requested, reason: error.message });
-				}
-			}
-			if (byRealPath.size === 0) return { json: { imported: [], skipped } };
-
-			const job = jobs.create({
-				kind: "import",
-				origin: ctx.origin,
+			const { mediaId, entry } = await motionElement(
 				projectId,
-				status: "running",
-			});
-			const importFiles = [...byRealPath.values()].map(
-				({ mtimeMs: _mtimeMs, ...file }) => file,
+				input.elementId,
+				ctx.signal,
 			);
-			logger.info("import started", {
-				jobId: job.id,
-				files: importFiles.length,
-				projectId,
-			});
-
-			// A retry while this import runs (a client that gave up) must not copy the same files a second time.
-			for (const realPath of byRealPath.keys()) importsInFlight.set(realPath, job.id);
-
-			// Not tied to ctx.signal: if the MCP client gives up, the tab keeps importing and the index is still
-			// recorded when it answers.
-			const work = hub
-				.call(
-					"internal.import_files",
-					{
-						jobId: job.id,
-						files: importFiles,
-						...(input.place ? { place: input.place } : {}),
+			return {
+				json: {
+					blocks: motion.blocks,
+					element: {
+						elementId: input.elementId,
+						mediaId,
+						block: entry.block,
+						props: entry.props,
+						duration: entry.duration,
 					},
-					{ projectId, timeoutMs: IMPORT_TIMEOUT_MS },
-				)
-				.then(async (result) => {
-					const parsed = ImportResultSchema.safeParse(result.json);
-					if (parsed.success) {
-						const importedAt = now().toISOString();
-						const entries: Record<string, MediaIndexEntry> = {};
-						for (const item of parsed.data.imported) {
-							const source = byRealPath.get(item.path);
-							if (source)
-								entries[item.mediaId] = {
-									path: source.path,
-									size: source.size,
-									mtimeMs: source.mtimeMs,
-									importedAt,
-								};
-						}
-						if (Object.keys(entries).length > 0) {
-							await mediaIndex
-								.record(projectId, entries)
-								.catch((error: unknown) => {
-									logger.error("could not write the media index", {
-										projectId,
-										error: errorMessage(error),
-									});
-								});
-						}
-					} else {
-						logger.warn(
-							"unexpected import result shape (media index not updated)",
-							{ jobId: job.id },
-						);
-					}
-					jobs.finish(job.id, { status: "done", result: result.json });
-					return result;
-				})
-				.catch((error: unknown) => {
-					const bridgeError = toBridgeError(error);
-					jobs.finish(job.id, {
-						status: "failed",
-						error: `${bridgeError.code}: ${bridgeError.message}`,
-					});
-					throw bridgeError;
-				})
-				.finally(() => {
-					for (const realPath of byRealPath.keys()) {
-						if (importsInFlight.get(realPath) === job.id)
-							importsInFlight.delete(realPath);
-					}
-				});
-			work.catch(() => {});
-
-			const stopProgress = relayJobProgress({
-				jobs,
-				jobId: job.id,
-				report: ctx.reportProgress,
-			});
-			let result: ToolResult;
-			try {
-				result = await untilAborted(work, ctx.signal);
-			} finally {
-				stopProgress();
-			}
-			const parsed = ImportResultSchema.safeParse(result.json);
-			if (!parsed.success) return result;
-			const json = {
-				...(result.json as Record<string, unknown>),
-				skipped: [...skipped, ...(parsed.data.skipped ?? [])],
+				},
 			};
-			return { ...result, json };
+		},
+
+		async add_motion_block(input, ctx) {
+			const projectId = requireProject();
+			const resolved = motion.resolve({
+				block: input.block,
+				props: input.props ?? {},
+				duration: input.duration,
+			});
+			const format = await projectFormat(ctx.signal);
+			if (resolved.block.fullScreen && format.height > format.width)
+				throw new BridgeError({
+					code: "INVALID_PARAMS",
+					message: `Block "${resolved.block.id}" is a full-screen 16:9 shot: it does not fit a vertical canvas yet. Use an overlay block instead.`,
+				});
+			const rendered = await renderBlock(
+				{ projectId, ...resolved, ...format },
+				ctx,
+			);
+			const result = await importFromDisk(
+				{
+					paths: [rendered.file],
+					place: { start: input.start, track: input.track ?? "overlay" },
+				},
+				ctx,
+			);
+			const { mediaId, elementId } = firstImported(result);
+			await motion.record(projectId, mediaId, {
+				block: resolved.block.id,
+				props: resolved.props,
+				duration: rendered.duration,
+				...format,
+				file: rendered.file,
+				renderedAt: "",
+			});
+			return {
+				json: {
+					...(elementId ? { elementId } : {}),
+					mediaId,
+					block: resolved.block.id,
+					props: resolved.props,
+					duration: rendered.duration,
+					start: input.start,
+					...(elementId
+						? {}
+						: {
+								warnings: [
+									"The block was rendered and added to the media library but could not be placed; place it with apply_edit_plan insert_media.",
+								],
+							}),
+				},
+			};
+		},
+
+		async update_motion_block(input, ctx) {
+			const projectId = requireProject();
+			const { mediaId: previousMediaId, entry } = await motionElement(
+				projectId,
+				input.elementId,
+				ctx.signal,
+			);
+			const resolved = motion.resolve({
+				block: entry.block,
+				props: { ...entry.props, ...(input.props ?? {}) },
+				duration: input.duration ?? entry.duration,
+			});
+			const format = await projectFormat(ctx.signal);
+			const rendered = await renderBlock(
+				{ projectId, ...resolved, ...format },
+				ctx,
+			);
+			const result = await importFromDisk(
+				{
+					paths: [rendered.file],
+					replace: {
+						elementId: input.elementId,
+						removeMediaId: previousMediaId,
+					},
+				},
+				ctx,
+			);
+			const { mediaId } = firstImported(result);
+			await motion.record(projectId, mediaId, {
+				block: resolved.block.id,
+				props: resolved.props,
+				duration: rendered.duration,
+				...format,
+				file: rendered.file,
+				renderedAt: "",
+			});
+			return {
+				json: {
+					elementId: input.elementId,
+					mediaId,
+					block: resolved.block.id,
+					props: resolved.props,
+					duration: rendered.duration,
+				},
+			};
 		},
 
 		async start_export(input, ctx) {

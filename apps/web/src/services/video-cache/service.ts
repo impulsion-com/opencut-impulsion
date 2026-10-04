@@ -293,6 +293,8 @@ export class VideoCache {
 			const sink = new CanvasSink(videoTrack, {
 				poolSize: 3,
 				fit: "contain",
+				// Transparent sources (VP9 with alpha, as rendered for motion blocks) keep their alpha channel.
+				alpha: true,
 			});
 
 			this.sinks.set(mediaId, {

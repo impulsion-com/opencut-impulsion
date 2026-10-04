@@ -6,8 +6,15 @@ import {
 	type InternalMethodParams,
 	type ToolResult,
 } from "@opencut/claude-tools";
-import { AddMediaAssetCommand } from "@/commands/media";
-import { AddTrackCommand, InsertElementCommand } from "@/commands/timeline";
+import {
+	AddMediaAssetCommand,
+	RemoveMediaAssetCommand,
+} from "@/commands/media";
+import {
+	AddTrackCommand,
+	InsertElementCommand,
+	UpdateElementsCommand,
+} from "@/commands/timeline";
 import type { Command } from "@/commands";
 import type { EditorCore } from "@/core";
 import {
@@ -16,7 +23,12 @@ import {
 } from "@/media/processing";
 import type { MediaType } from "@/media/types";
 import { buildElementFromMedia } from "@/timeline/element-utils";
-import { mediaTimeFromSeconds, type MediaTime } from "@/wasm";
+import {
+	mediaTimeFromSeconds,
+	ZERO_MEDIA_TIME,
+	type MediaTime,
+} from "@/wasm";
+import type { SceneTracks, TimelineElement } from "@/timeline";
 import { flushSave, runAiEdit } from "@/claude/edit/ai-edit";
 import {
 	BridgeError,
@@ -341,10 +353,25 @@ export async function importFiles({
 	try {
 		runAiEdit({
 			editor,
-			label: "Importer des médias",
+			label: input.replace ? "Modifier un bloc motion" : "Importer des médias",
 			build: (tracks) => {
 				inserts.length = 0;
 				const commands: Command[] = [...addCommands];
+				if (input.replace) {
+					const entry = imported[0];
+					const add = addCommands[0];
+					if (!entry || !add) return commands;
+					return [
+						...commands,
+						...replaceCommands({
+							tracks,
+							projectId,
+							replace: input.replace,
+							mediaId: add.getAssetId(),
+							duration: assetDuration(entry.asset),
+						}),
+					];
+				}
 				if (!target || !input.place) return commands;
 				// InsertElementCommand's first-element rule counts elements, like this.
 				wasEmpty = getOrderedTracks(tracks).every(
@@ -449,6 +476,83 @@ export async function importFiles({
 		...(warnings.length > 0 ? { warnings } : {}),
 		stateVersion,
 	});
+}
+
+/**
+ * update_motion_block: the element keeps its id, track, start, transforms and keyframes; only its media and its
+ * length change. The replaced media leaves the library unless another element still uses it.
+ */
+function replaceCommands({
+	tracks,
+	projectId,
+	replace,
+	mediaId,
+	duration,
+}: {
+	tracks: SceneTracks;
+	projectId: string;
+	replace: NonNullable<InternalMethodParams<"internal.import_files">["replace"]>;
+	mediaId: string;
+	duration: MediaTime;
+}): Command[] {
+	const ordered = getOrderedTracks(tracks);
+	const track = ordered.find((candidate) =>
+		candidate.elements.some((element) => element.id === replace.elementId),
+	);
+	const element = track?.elements.find(
+		(candidate) => candidate.id === replace.elementId,
+	);
+	if (!track || !element || element.type !== "video") {
+		throw new BridgeError({
+			code: "NOT_FOUND",
+			message: `No video element "${replace.elementId}" in the active scene (ids change after split, undo and redo).`,
+		});
+	}
+	const end = element.startTime + duration;
+	const blocker = track.elements.find(
+		(other) =>
+			other.id !== element.id &&
+			other.startTime < end &&
+			other.startTime + other.duration > element.startTime,
+	);
+	if (blocker) {
+		throw new BridgeError({
+			code: "INVALID_EDIT",
+			message: `The new duration would overlap "${blocker.name}" on the same track. Move one of them first, or use a shorter duration.`,
+		});
+	}
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
+	const patch = {
+		mediaId,
+		duration,
+		sourceDuration: duration,
+		trimStart: ZERO_MEDIA_TIME,
+		trimEnd: ZERO_MEDIA_TIME,
+	} as Partial<TimelineElement>;
+	const commands: Command[] = [
+		new UpdateElementsCommand({
+			updates: [{ trackId: track.id, elementId: element.id, patch }],
+		}),
+	];
+	const stillUsed =
+		replace.removeMediaId !== undefined &&
+		ordered.some((candidate) =>
+			candidate.elements.some(
+				(other) =>
+					other.id !== element.id &&
+					"mediaId" in other &&
+					other.mediaId === replace.removeMediaId,
+			),
+		);
+	if (replace.removeMediaId !== undefined && !stillUsed) {
+		commands.push(
+			new RemoveMediaAssetCommand({
+				projectId,
+				assetId: replace.removeMediaId,
+			}),
+		);
+	}
+	return commands;
 }
 
 function placementCommands({

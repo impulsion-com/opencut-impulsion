@@ -542,6 +542,64 @@ Returns JSON {jobId, status}.`,
 });
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// MOTION BLOCKS (Remotion animations rendered by the sidecar, editable afterwards)
+// ---------------------------------------------------------------------------
+
+const MotionPropsSchema = z
+	.record(z.string().min(1).max(60), z.unknown())
+	.describe("Settings of the block, keyed as in list_motion_blocks (texts, lists, placement, y, scale). Omitted keys take the block's defaults; unknown keys are refused.");
+
+export const listMotionBlocksTool = defineTool({
+	name: "list_motion_blocks",
+	title: "List motion blocks",
+	group: "media",
+	runsIn: "sidecar",
+	annotations: READ_ONLY,
+	input: z.strictObject({
+		elementId: EntityIdSchema.optional().describe("A timeline element made by add_motion_block: also return its current block, props and duration."),
+	}),
+	description: `List the motion design blocks (titles, programme list, prompt bar, cards, notifications, call to action, full-screen shots). Each one is a Remotion animation rendered with a transparent background and placed on the timeline as a video element whose texts and duration stay editable.
+Call it before add_motion_block to get the block ids and their settings.
+Returns JSON {blocks:[{id, label, description, defaultDuration, minDuration, fullScreen, fields:[{key, label, type, default, options?, item?, min?, max?}]}], element?: {elementId, mediaId, block, props, duration}}.`,
+});
+
+export const addMotionBlockTool = defineTool({
+	name: "add_motion_block",
+	title: "Add a motion block",
+	group: "media",
+	runsIn: "hybrid",
+	annotations: EDIT,
+	input: z.strictObject({
+		block: z.string().min(1).max(60).describe("Block id from list_motion_blocks, e.g. \"headline\"."),
+		props: MotionPropsSchema.optional(),
+		start: TimeSecondsSchema.describe("Timeline time in seconds where the block appears."),
+		duration: z.number().min(0.5).max(60).optional().describe("Seconds on screen. Default: the block's defaultDuration. The entrance and exit animations are fitted to it."),
+		track: z
+			.union([z.enum(TRACK_KEYWORDS), EntityIdSchema])
+			.optional()
+			.describe('Default "overlay": a new track above everything, so the block shows over the footage.'),
+	}),
+	description: `Render a motion block with Remotion (transparent background, project canvas size and fps) and place it on the timeline. Rendering takes about 4 times the block duration. One undo step.
+The result is a normal video element: move it, trim it or keyframe it with apply_edit_plan. To change its texts or its duration, use update_motion_block (never set_speed or a trim: they would cut the exit animation).
+Returns JSON {elementId, mediaId, block, props, duration, start}.`,
+});
+
+export const updateMotionBlockTool = defineTool({
+	name: "update_motion_block",
+	title: "Update a motion block",
+	group: "media",
+	runsIn: "hybrid",
+	annotations: EDIT,
+	input: z.strictObject({
+		elementId: elementId(),
+		props: MotionPropsSchema.optional().describe("Settings to change; the others keep their current value. For a list, send the whole list."),
+		duration: z.number().min(0.5).max(60).optional().describe("New duration in seconds; the animation is re-timed to fit (entrances at the start, exit at the end)."),
+	}),
+	description: `Change the texts, the placement or the duration of a block made by add_motion_block: it is rendered again and the element keeps its place, its track, its transforms and its keyframes. One undo step.
+Returns JSON {elementId, mediaId (new), block, props, duration}. Errors: NOT_FOUND when the element is not a motion block.`,
+});
+
 // Catalogue
 // ---------------------------------------------------------------------------
 
@@ -573,6 +631,9 @@ export const TOOLS = [
 	startExportTool,
 	jobStatusTool,
 	cancelJobTool,
+	listMotionBlocksTool,
+	addMotionBlockTool,
+	updateMotionBlockTool,
 ] as const;
 
 export type AnyTool = (typeof TOOLS)[number];

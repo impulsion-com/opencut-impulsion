@@ -10,6 +10,8 @@ import { SoundsView } from "@/sounds/components/assets-view";
 import { StickersView } from "@/stickers/components/assets-view";
 import { TextView } from "@/text/components/assets-view";
 import { EffectsView } from "@/effects/components/assets-view";
+import { MotionView } from "@/claude/motion/motion-view";
+import { MotionAutoFit } from "@/claude/motion/motion-autofit";
 
 export function AssetsPanel() {
 	const { activeTab } = useAssetsPanelStore();
@@ -18,6 +20,7 @@ export function AssetsPanel() {
 		media: <MediaView />,
 		sounds: <SoundsView />,
 		text: <TextView />,
+		motion: <MotionView />,
 		stickers: <StickersView />,
 		effects: <EffectsView />,
 		transitions: (
@@ -36,6 +39,7 @@ export function AssetsPanel() {
 
 	return (
 		<div className="panel bg-background flex h-full rounded-sm border overflow-hidden">
+			<MotionAutoFit />
 			<TabBar />
 			<Separator orientation="vertical" />
 			<div className="flex-1 overflow-hidden">{viewMap[activeTab]}</div>

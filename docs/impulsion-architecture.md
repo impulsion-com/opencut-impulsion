@@ -631,6 +631,19 @@ The CapCut MCP (`mcp__capcut__*`) is superseded: no absolute placement, no trans
 
 ---
 
+## 10b. Motion blocks (built 4 Oct. 2026)
+
+Remotion and the editor are combined through **motion blocks**: one Remotion composition per block, rendered by the sidecar with an alpha channel and placed on the timeline as a video element that stays editable.
+
+- **Package `packages/motion-blocks`.** `src/catalog.ts` is pure data (block ids, French labels, field list, validation with `normalizeMotionProps`), imported by the tab, the sidecar and the Remotion bundle. `src/remotion/` holds the single `Block` composition (size, fps and length come from the input props) and the vendored graphics layer. `src/render.ts` bundles once per process and renders VP9 with alpha (`yuva420p`, PNG frames, no audio).
+- **Encoding speed.** libvpx-vp9 at its default deadline took about 17 s for a 4 s block; `-deadline realtime -cpu-used 8 -row-mt 1` (through `ffmpegOverride`) brings it under 2 s. VP8 was slower than both.
+- **Alpha in the editor.** `CanvasSink` in `apps/web/src/services/video-cache/service.ts` is created with `alpha: true`; mediabunny then keeps the alpha plane of VP9 WebM. Preview and export share that path, and an export keeps the overlay.
+- **Sidecar (`apps/bridge/src/motion.ts`, `motion-http.ts`).** Renders go to `config.motionDir` (added to the file registry's roots), one at a time. `motion-index.json` per project maps `mediaId` to `{block, props, duration, fps, width, height, file}`. Tools: `list_motion_blocks` (sidecar), `add_motion_block` and `update_motion_block` (hybrid, both end in `internal.import_files`).
+- **Swap in one undo step.** `internal.import_files` takes an optional `replace: {elementId, removeMediaId}`: the tab adds the new asset, patches the element (`mediaId`, `duration`, `sourceDuration`, trims to zero) with `UpdateElementsCommand` and removes the old asset, all in the import's `AiEditCommand`. Transforms, keyframes, track and start are untouched. A longer duration that would overlap the next element on the track is refused (`INVALID_EDIT`).
+- **Editor UI (`apps/web/src/claude/motion/`).** A "Motion" view in the assets panel adds a block at the playhead; a "Bloc motion" tab in the properties panel edits its fields and re-renders. A block is recognised by its asset name (`bloc-<id>-<8 hex>.webm`).
+- **Stretching by the handle.** `buildResizeMembers` drops `sourceDuration` for motion elements, so they resize like images. `MotionAutoFit` (mounted in the assets panel) then sees an element whose length or trims no longer match its render and calls `/motion/update` with the new duration, 700 ms after the last change.
+- **Limits.** The settings index lives on disk next to the sidecar, not in the project: a project opened on another machine keeps its blocks as plain videos. Full-screen shots are 16:9 only. Renaming a block element by hand breaks its recognition by the resize code (the asset name still identifies it in the panel).
+
 ## 11. Risks and open questions
 
 ### 11.1 Risks (most severe first)

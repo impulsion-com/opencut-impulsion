@@ -9,6 +9,7 @@ import {
 	HeadphonesIcon,
 	MagicWand05Icon,
 	TextIcon,
+	SparklesIcon,
 	Settings01Icon,
 	SlidersHorizontalIcon,
 	ColorsIcon,
@@ -19,6 +20,7 @@ export const TAB_KEYS = [
 	"media",
 	"sounds",
 	"text",
+	"motion",
 	"stickers",
 	"effects",
 	"transitions",
@@ -47,6 +49,10 @@ export const tabs = {
 	text: {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
 		label: "Text",
+	},
+	motion: {
+		icon: createHugeiconsIcon({ icon: SparklesIcon }),
+		label: "Motion",
 	},
 	stickers: {
 		icon: createHugeiconsIcon({ icon: Happy01Icon }),

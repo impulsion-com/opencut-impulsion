@@ -38,6 +38,7 @@ import {
 	projectFolderName,
 	type MediaIndex,
 } from "../media-index";
+import { createMotionService } from "../motion";
 import {
 	createProgressNotifier,
 	createToolRegistry,
@@ -94,6 +95,8 @@ let fake: FakeHub;
 let jobs: JobTable;
 let mediaIndex: MediaIndex;
 let registry: ToolRegistry;
+let motionDir: string;
+let renders: Array<{ block: string; props: unknown; duration: number; width: number; fps: number }>;
 const mcpOrigin = { origin: { kind: "mcp" as const } };
 
 beforeAll(async () => {
@@ -121,8 +124,27 @@ beforeEach(() => {
 		dataDir: path.join(base, "data"),
 		logger: silentLogger,
 	});
+	motionDir = path.join(root, "blocs-motion");
+	renders = [];
+	const motion = createMotionService({
+		dataDir: path.join(base, "data"),
+		motionDir,
+		logger: silentLogger,
+		// Stands in for Remotion: writes a file where the real renderer would.
+		renderer: async (request) => {
+			renders.push({
+				block: request.block.id,
+				props: request.props,
+				duration: request.duration,
+				width: request.width,
+				fps: request.fps,
+			});
+			await writeFile(request.outputPath, "webm");
+			return { duration: request.duration };
+		},
+	});
 	const files = createFileRegistry({
-		getRoots: () => [root],
+		getRoots: () => [root, motionDir],
 		ttlMs: 60_000,
 		logger: silentLogger,
 	});
@@ -132,6 +154,7 @@ beforeEach(() => {
 		files,
 		uploads: { abort: () => false },
 		mediaIndex,
+		motion,
 		prober: null,
 		config: { allowedRoots: [root], exportsDir },
 		logger: silentLogger,
@@ -687,5 +710,133 @@ describe("exports and jobs", () => {
 		expect(sanitizeExportName("a\u0000b")).toBe("a-b");
 		expect(projectFolderName("abc-123")).toBe("abc-123");
 		expect(projectFolderName("../x")).toStartWith("id-");
+	});
+});
+
+describe("motion blocks", () => {
+	const editorState = {
+		json: { project: { canvas: { width: 1080, height: 1920 }, fps: 30 } },
+	};
+
+	function answerImports(mediaIds: string[]) {
+		let next = 0;
+		fake.responses.set("internal.import_files", async (params) => {
+			const input = params as {
+				files: Array<{ path: string }>;
+				place?: unknown;
+				replace?: { elementId: string };
+			};
+			const mediaId = mediaIds[next++] ?? "m-extra";
+			return {
+				json: {
+					imported: [{ path: input.files[0]?.path, mediaId }],
+					...(input.place ? { elementIds: ["el-1"] } : {}),
+					skipped: [],
+				},
+			};
+		});
+	}
+
+	test("list_motion_blocks returns the catalogue without needing a tab", async () => {
+		fake.state.connected = false;
+		const result = await registry.run("list_motion_blocks", {}, mcpOrigin);
+		const blocks = (result.json as { blocks: Array<{ id: string }> }).blocks;
+		expect(blocks.map((block) => block.id)).toContain("headline");
+		expect(fake.calls).toEqual([]);
+	});
+
+	test("add_motion_block renders at the project format, places the file and records its settings", async () => {
+		fake.responses.set("get_editor_state", async () => editorState);
+		answerImports(["m-1"]);
+		const result = await registry.run(
+			"add_motion_block",
+			{ block: "headline", props: { pill: "Motion" }, start: 2, duration: 3 },
+			mcpOrigin,
+		);
+		expect(renders).toHaveLength(1);
+		expect(renders[0]).toMatchObject({
+			block: "headline",
+			duration: 3,
+			width: 1080,
+			fps: 30,
+		});
+		expect((renders[0]?.props as { pill: string; lead: string }).pill).toBe("Motion");
+		// Defaults are filled in, so the stored settings are complete.
+		expect((renders[0]?.props as { lead: string }).lead).toBe("Devenir");
+		const importCall = fake.calls.find(
+			(call) => call.method === "internal.import_files",
+		);
+		expect(importCall?.params).toMatchObject({
+			place: { start: 2, track: "overlay" },
+		});
+		expect(result.json).toMatchObject({
+			elementId: "el-1",
+			mediaId: "m-1",
+			block: "headline",
+			duration: 3,
+		});
+
+		fake.responses.set("get_element", async () => ({
+			json: { id: "el-1", mediaId: "m-1" },
+		}));
+		const described = await registry.run(
+			"list_motion_blocks",
+			{ elementId: "el-1" },
+			mcpOrigin,
+		);
+		expect(
+			(described.json as { element: { block: string; props: { pill: string } } })
+				.element,
+		).toMatchObject({ block: "headline", props: { pill: "Motion" } });
+	});
+
+	test("update_motion_block merges the new settings, re-renders and swaps the element's media", async () => {
+		fake.responses.set("get_editor_state", async () => editorState);
+		answerImports(["m-1", "m-2"]);
+		await registry.run(
+			"add_motion_block",
+			{ block: "cta", props: { label: "Avant" }, start: 0 },
+			mcpOrigin,
+		);
+		fake.responses.set("get_element", async () => ({
+			json: { id: "el-1", mediaId: "m-1" },
+		}));
+		const result = await registry.run(
+			"update_motion_block",
+			{ elementId: "el-1", props: { label: "Après" }, duration: 6 },
+			mcpOrigin,
+		);
+		expect(renders).toHaveLength(2);
+		expect(renders[1]).toMatchObject({ block: "cta", duration: 6 });
+		expect((renders[1]?.props as { label: string; eyebrow: string }).label).toBe("Après");
+		expect((renders[1]?.props as { eyebrow: string }).eyebrow).toBe("ON DÉMARRE");
+		const swaps = fake.calls.filter(
+			(call) => call.method === "internal.import_files",
+		);
+		expect(swaps[1]?.params).toMatchObject({
+			replace: { elementId: "el-1", removeMediaId: "m-1" },
+		});
+		expect((swaps[1]?.params as { place?: unknown }).place).toBeUndefined();
+		expect(result.json).toMatchObject({ elementId: "el-1", mediaId: "m-2", duration: 6 });
+	});
+
+	test("refuses unknown blocks, unknown settings, non-motion elements and full-screen shots on a vertical canvas", async () => {
+		fake.responses.set("get_editor_state", async () => editorState);
+		const code = async (name: string, params: unknown) =>
+			(
+				(await registry
+					.run(name, params, mcpOrigin)
+					.catch((caught: unknown) => caught)) as BridgeError
+			).code;
+		expect(await code("add_motion_block", { block: "nope", start: 0 })).toBe("INVALID_PARAMS");
+		expect(
+			await code("add_motion_block", { block: "cta", props: { labl: "x" }, start: 0 }),
+		).toBe("INVALID_PARAMS");
+		expect(await code("add_motion_block", { block: "scramble", start: 0 })).toBe("INVALID_PARAMS");
+		fake.responses.set("get_element", async () => ({
+			json: { id: "el-9", mediaId: "not-a-block" },
+		}));
+		expect(await code("update_motion_block", { elementId: "el-9", duration: 2 })).toBe("NOT_FOUND");
+		expect(renders).toEqual([]);
 	});
 });

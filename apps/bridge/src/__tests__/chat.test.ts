@@ -24,6 +24,7 @@ import { createJobTable, type JobTable } from "../jobs";
 import { silentLogger } from "../log";
 import { createFileRegistry } from "../files";
 import { createMediaIndex } from "../media-index";
+import { createMotionService } from "../motion";
 import { createToolRegistry } from "../tools";
 import { sleep } from "./helpers";
 
@@ -184,6 +185,11 @@ function makeManager(
 		uploads: { abort: () => false },
 		mediaIndex: createMediaIndex({
 			dataDir: "/nonexistent-opencut-test",
+			logger: silentLogger,
+		}),
+		motion: createMotionService({
+			dataDir: path.join(home, "data"),
+			motionDir: path.join(home, "motion"),
 			logger: silentLogger,
 		}),
 		prober: null,

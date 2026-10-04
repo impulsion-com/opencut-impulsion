@@ -71,6 +71,9 @@ const EXPECTED_TOOL_NAMES: ToolName[] = [
 	"start_export",
 	"job_status",
 	"cancel_job",
+	"list_motion_blocks",
+	"add_motion_block",
+	"update_motion_block",
 ];
 
 // ---------------------------------------------------------------------------

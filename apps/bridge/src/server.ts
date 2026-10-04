@@ -28,6 +28,8 @@ import { createJobTable, type JobTable } from "./jobs";
 import type { Logger } from "./log";
 import { createMcpEndpoint, type McpEndpoint } from "./mcp";
 import { createMediaIndex } from "./media-index";
+import { createMotionService, type MotionService } from "./motion";
+import { registerMotionRoutes } from "./motion-http";
 import { createProber } from "./probe";
 import { createToolRegistry, type ToolRegistry } from "./tools";
 import { BRIDGE_VERSION } from "./version";
@@ -71,6 +73,7 @@ export interface BridgeServer {
 	readonly registry: ToolRegistry;
 	readonly mcp: McpEndpoint;
 	readonly chat: ChatManager;
+	readonly motion: MotionService;
 	readonly app: Express;
 	/** Starts listening; resolves with the bound port. */
 	listen(): Promise<number>;
@@ -97,7 +100,8 @@ export function createBridgeServer({
 		logger: logger.child("probe"),
 	});
 	const files = createFileRegistry({
-		getRoots: () => config.allowedRoots,
+		// Rendered motion blocks are served to the tab like any imported file.
+		getRoots: () => [...config.allowedRoots, config.motionDir],
 		ttlMs: config.fileTokenTtlMs,
 		logger: logger.child("files"),
 	});
@@ -121,12 +125,18 @@ export function createBridgeServer({
 		dataDir: config.dataDir,
 		logger: logger.child("media-index"),
 	});
+	const motion = createMotionService({
+		dataDir: config.dataDir,
+		motionDir: config.motionDir,
+		logger: logger.child("motion"),
+	});
 	const registry = createToolRegistry({
 		hub,
 		jobs,
 		files,
 		uploads,
 		mediaIndex,
+		motion,
 		prober,
 		config,
 		logger: logger.child("tools"),
@@ -201,6 +211,13 @@ export function createBridgeServer({
 			uploads.handle({ req, res, jobId: String(req.params.jobId) }).catch(next);
 		},
 	);
+	registerMotionRoutes({
+		app,
+		hub,
+		motion,
+		registry,
+		logger: logger.child("motion-http"),
+	});
 	app.use((_req: Request, res: Response) =>
 		sendJson({ res, status: 404, body: { error: "not found" } }),
 	);
@@ -239,6 +256,7 @@ export function createBridgeServer({
 		registry,
 		mcp,
 		chat,
+		motion,
 		app,
 		health,
 		listen() {

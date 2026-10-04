@@ -136,6 +136,16 @@ export const INTERNAL_METHOD_PARAMS = {
 				track: z.union([z.enum(TRACK_KEYWORDS), EntityIdSchema]).optional(),
 			})
 			.optional(),
+		/**
+		 * update_motion_block: instead of placing the (single) imported file, point an existing video element at
+		 * it, with its new duration, and drop the media it replaces. Same undo step as the import.
+		 */
+		replace: z
+			.object({
+				elementId: EntityIdSchema,
+				removeMediaId: EntityIdSchema.optional(),
+			})
+			.optional(),
 	}),
 	/**
 	 * start_export, tab half. The tab acks at once (result json {accepted: true}), renders, POSTs the file

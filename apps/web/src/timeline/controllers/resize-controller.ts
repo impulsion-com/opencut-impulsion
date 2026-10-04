@@ -1,4 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { isMotionAssetName } from "@/claude/motion/motion-client";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import {
 	addMediaTime,
@@ -130,7 +131,11 @@ export function buildResizeMembers({
 				duration: element.duration,
 				trimStart: element.trimStart,
 				trimEnd: element.trimEnd,
-				sourceDuration: element.sourceDuration,
+				// A motion block is rendered again at whatever length it is given, so it stretches like an image
+				// instead of stopping at the end of its current render.
+				sourceDuration: isMotionAssetName(element.name)
+					? undefined
+					: element.sourceDuration,
 				retime: isRetimableElement(element) ? element.retime : undefined,
 				leftNeighborBound,
 				rightNeighborBound,

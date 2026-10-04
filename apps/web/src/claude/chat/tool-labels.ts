@@ -31,6 +31,9 @@ const TOOL_LABELS: Readonly<Record<ToolName, string>> = {
 	start_export: "Lance l'export",
 	job_status: "Suit une tâche",
 	cancel_job: "Annule une tâche",
+	list_motion_blocks: "Consulte les blocs motion",
+	add_motion_block: "Ajoute un bloc motion",
+	update_motion_block: "Modifie un bloc motion",
 };
 
 const MCP_PREFIX = "mcp__opencut__";

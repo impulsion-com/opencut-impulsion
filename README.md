@@ -43,6 +43,16 @@ Deux façons, au choix :
 
 Dans les deux cas, l'éditeur doit être lancé et ouvert dans Chrome : Claude agit à travers cet onglet.
 
+### Le motion design
+
+L'onglet **Motion** du panneau de gauche liste les blocs animés : titre, sommaire, barre de commande, pile de cartes, notifications, appel à l'action, et trois plans plein écran. Un clic sur « Ajouter » pose le bloc à la tête de lecture, par-dessus ta vidéo.
+
+Un bloc reste modifiable. Sélectionne-le dans la timeline : le panneau de droite affiche ses textes, sa position et sa durée. « Appliquer » le recalcule en quelques secondes, à la même place. Tu peux aussi l'étirer ou le raccourcir à la poignée : il se recale tout seul sur sa nouvelle durée, avec son entrée au début et sa sortie à la fin.
+
+Tu peux aussi le demander à Claude : « ajoute un titre "Devenir Media Buyer" à 3 secondes », « change le texte de la pastille », « fais durer le sommaire 10 secondes ».
+
+Ces blocs sont rendus par Remotion. Remotion est gratuit pour les particuliers et les entreprises de 3 personnes ou moins, payant au-delà : voir [remotion.dev/license](https://remotion.dev/license).
+
 ### Tes dossiers de vidéos
 
 Claude peut importer des fichiers depuis `~/Movies`, `~/Downloads`, `~/Desktop` et les disques externes, et les exports arrivent dans `~/impulsion/videos/exports`. Pour changer ces dossiers, crée `~/.config/opencut-impulsion/config.json` :

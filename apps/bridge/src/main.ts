@@ -48,6 +48,9 @@ async function main(): Promise<void> {
 		process.exit(1);
 	}
 
+	// The first motion block should not wait for the Remotion bundle: build it while the user settles in.
+	setTimeout(() => bridge.motion.prewarm(), 3000).unref();
+
 	let stopping = false;
 	const shutdown = (signal: string) => {
 		if (stopping) {

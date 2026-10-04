@@ -21,6 +21,7 @@ import {
 	MusicNote03Icon,
 	MagicWand05Icon,
 	DashboardSpeed02Icon,
+	SparklesIcon,
 } from "@hugeicons/core-free-icons";
 import { ElementParamsTab } from "./components/element-params-tab";
 import { ClipEffectsTab, StandaloneEffectTab } from "@/effects/components/effects-tab";
@@ -28,6 +29,8 @@ import { MasksTab } from "@/masks/components/masks-tab";
 import { SpeedTab } from "@/speed/components/speed-tab";
 import { GraphicTab } from "@/graphics/components/graphic-tab";
 import { OcShapesIcon } from "@/components/icons";
+import { MotionTab } from "@/claude/motion/motion-tab";
+import { isMotionAssetName } from "@/claude/motion/motion-client";
 
 const TRANSFORM_PARAM_KEYS = [
 	"transform.positionX",
@@ -243,9 +246,21 @@ function getVideoConfig({
 	mediaAsset: MediaAsset | undefined;
 }): ElementPropertiesConfig {
 	const showAudioTab = mediaAsset?.hasAudio !== false;
+	// A motion block is a rendered video whose settings stay editable: its own tab comes first.
+	const isMotion = isMotionAssetName(mediaAsset?.name);
 	return {
-		defaultTab: "transform",
+		defaultTab: isMotion ? "motion" : "transform",
 		tabs: [
+			...(isMotion
+				? [
+						{
+							id: "motion",
+							label: "Bloc motion",
+							icon: <HugeiconsIcon icon={SparklesIcon} size={16} />,
+							content: () => <MotionTab element={element} />,
+						} satisfies PropertiesTabDef,
+					]
+				: []),
 			buildTransformTab({ element }),
 			...(showAudioTab ? [buildAudioTab({ element })] : []),
 			buildSpeedTab({ element }),

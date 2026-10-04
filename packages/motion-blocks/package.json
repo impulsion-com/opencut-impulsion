@@ -1,0 +1,32 @@
+{
+	"name": "@opencut/motion-blocks",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Motion blocks for the OpenCut Impulsion fork: Remotion animations rendered with a transparent background, placed on the timeline as editable elements.",
+	"exports": {
+		".": "./src/catalog.ts",
+		"./catalog": "./src/catalog.ts",
+		"./render": "./src/render.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"test": "bun test",
+		"studio": "remotion studio src/remotion/index.ts"
+	},
+	"dependencies": {
+		"@remotion/bundler": "4.0.522",
+		"@remotion/fonts": "4.0.522",
+		"@remotion/renderer": "4.0.522",
+		"react": "^19.2.8",
+		"react-dom": "^19.2.8",
+		"remotion": "4.0.522"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"@types/node": "^24.2.1",
+		"@types/react": "^19.2.10",
+		"@types/react-dom": "^19.2.3",
+		"typescript": "^5.9.3"
+	}
+}

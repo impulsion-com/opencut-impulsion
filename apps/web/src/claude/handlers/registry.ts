@@ -98,6 +98,12 @@ export const SIDECAR_TOOL_TAB_DEPENDENCIES: Readonly<
 	import_media: ["internal.import_files"],
 	start_export: ["internal.export_start"],
 	cancel_job: ["internal.export_cancel"],
+	add_motion_block: ["get_editor_state", "internal.import_files"],
+	update_motion_block: [
+		"get_element",
+		"get_editor_state",
+		"internal.import_files",
+	],
 };
 
 export interface MissingTabHandlers {

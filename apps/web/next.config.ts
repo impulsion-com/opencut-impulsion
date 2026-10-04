@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
 		root: path.join(__dirname, "../.."),
 	},
 	// Workspace package shipped as TypeScript source.
-	transpilePackages: ["@opencut/claude-tools"],
+	transpilePackages: ["@opencut/claude-tools", "@opencut/motion-blocks"],
 	// No site may frame the editor: a framed tab would connect to the Claude bridge with our own Origin.
 	async headers() {
 		return [

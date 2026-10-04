@@ -28,6 +28,8 @@ export interface BridgeConfig {
 	allowedRoots: string[];
 	/** Where finished exports are written. */
 	exportsDir: string;
+	/** Where rendered motion blocks are written (served to the tab like an allowed root). Never a hidden folder. */
+	motionDir: string;
 	/** Per-project media indexes live in <dataDir>/projects/<projectId>/media-index.json. */
 	dataDir: string;
 	/** The Claude Code binary the Agent SDK spawns (never the SDK's bundled copy). */
@@ -55,6 +57,7 @@ const PathSchema = z.string().min(1);
 export const ConfigFileSchema = z.strictObject({
 	allowedRoots: z.array(PathSchema).optional(),
 	exportsDir: PathSchema.optional(),
+	motionDir: PathSchema.optional(),
 	dataDir: PathSchema.optional(),
 	claudePath: PathSchema.optional(),
 	profiles: z
@@ -97,6 +100,7 @@ function defaultConfig(home: string): Omit<BridgeConfig, "configFile"> {
 			"/Volumes",
 		],
 		exportsDir: path.join(home, "impulsion", "videos", "exports"),
+		motionDir: "",
 		dataDir: path.join(home, ".config", "opencut-impulsion"),
 		claudePath: path.join(home, ".local", "bin", "claude"),
 		profiles: {
@@ -123,7 +127,8 @@ export class ConfigError extends Error {
 /**
  * Environment overrides:
  * OPENCUT_BRIDGE_CONFIG (config file path), OPENCUT_BRIDGE_PORT (tests only: the editor always dials 3457),
- * OPENCUT_BRIDGE_ALLOWED_ROOTS (colon-separated), OPENCUT_BRIDGE_EXPORTS_DIR, OPENCUT_BRIDGE_DATA_DIR,
+ * OPENCUT_BRIDGE_ALLOWED_ROOTS (colon-separated), OPENCUT_BRIDGE_EXPORTS_DIR, OPENCUT_BRIDGE_MOTION_DIR,
+ * OPENCUT_BRIDGE_DATA_DIR,
  * OPENCUT_BRIDGE_CLAUDE_PATH, OPENCUT_BRIDGE_PROFILE_A, OPENCUT_BRIDGE_PROFILE_B, OPENCUT_BRIDGE_DEFAULT_PROFILE,
  * OPENCUT_BRIDGE_DEFAULT_MODEL, OPENCUT_BRIDGE_FFPROBE, OPENCUT_BRIDGE_FFMPEG, OPENCUT_BRIDGE_LOG_LEVEL.
  */
@@ -165,6 +170,9 @@ export function loadConfig({
 	applyEnv({ config, env, home });
 	// A default binary path that does not exist on this machine falls back to the same binary found on PATH
 	// (Intel Homebrew, npm-installed claude...). Paths set in the file or the environment were resolved above.
+	// Default: next to the exports, so the rendered blocks stay easy to find and to reuse.
+	if (!config.motionDir)
+		config.motionDir = path.join(path.dirname(config.exportsDir), "blocs-motion");
 	config.claudePath = findBinary({ preferred: config.claudePath, env });
 	config.ffprobePath = findBinary({ preferred: config.ffprobePath, env });
 	config.ffmpegPath = findBinary({ preferred: config.ffmpegPath, env });
@@ -184,6 +192,7 @@ function applyFile({
 	if (file.allowedRoots)
 		config.allowedRoots = file.allowedRoots.map((root) => absolute(root, home));
 	if (file.exportsDir) config.exportsDir = absolute(file.exportsDir, home);
+	if (file.motionDir) config.motionDir = absolute(file.motionDir, home);
 	if (file.dataDir) config.dataDir = absolute(file.dataDir, home);
 	if (file.claudePath) config.claudePath = absolute(file.claudePath, home);
 	if (file.profiles?.A) config.profiles.A = absolute(file.profiles.A, home);
@@ -232,6 +241,7 @@ function applyEnv({
 			"OPENCUT_BRIDGE_EXPORTS_DIR",
 			(resolved) => (config.exportsDir = resolved),
 		],
+		["OPENCUT_BRIDGE_MOTION_DIR", (resolved) => (config.motionDir = resolved)],
 		["OPENCUT_BRIDGE_DATA_DIR", (resolved) => (config.dataDir = resolved)],
 		[
 			"OPENCUT_BRIDGE_CLAUDE_PATH",
