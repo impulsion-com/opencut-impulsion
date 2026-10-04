@@ -54,6 +54,8 @@ Claude peut importer des fichiers depuis `~/Movies`, `~/Downloads`, `~/Desktop` 
 }
 ```
 
+Pour le montage automatique à partir de consignes (sous-titres, zooms, motion design), installe aussi le [kit montage](https://github.com/impulsion-com/kit-montage).
+
 Tous les réglages et le dépannage sont dans [`apps/bridge/README.md`](apps/bridge/README.md), l'architecture dans [`docs/impulsion-architecture.md`](docs/impulsion-architecture.md).
 
 ---
