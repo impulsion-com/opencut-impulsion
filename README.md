@@ -1,8 +1,66 @@
+# OpenCut Impulsion : l'éditeur vidéo que Claude pilote
+
+Un fork d'[OpenCut classic](https://github.com/opencut-app/opencut-classic) (MIT) auquel on a ajouté un pont vers Claude Code. Tu montes dans le navigateur comme dans CapCut, et tu peux aussi donner tes consignes à Claude, qui agit directement sur la timeline : coupes, textes, sous-titres, export. Chaque modification de Claude s'annule avec Cmd+Z.
+
+Tout tourne en local sur ton ordinateur. Tes vidéos ne partent nulle part, et le chat utilise ton propre abonnement Claude, jamais une clé d'API.
+
+## Installation
+
+Le plus simple : ouvre Claude Code et demande-lui « Installe https://github.com/impulsion-com/opencut-impulsion en suivant son README ».
+
+### Ce qu'il te faut
+
+- Un Mac (c'est la seule plateforme testée).
+- [Claude Code](https://claude.com/claude-code), connecté à ton abonnement Claude (`claude`, puis `/login`).
+- [Node.js](https://nodejs.org) 22 ou plus récent.
+- [Bun](https://bun.sh/docs/installation).
+- Google Chrome.
+- ffmpeg, pour lire les métadonnées des rushes importés depuis le disque : `brew install ffmpeg`.
+
+### Les étapes
+
+```sh
+git clone https://github.com/impulsion-com/opencut-impulsion.git
+cd opencut-impulsion
+bun install
+bun run dev:impulsion
+```
+
+`dev:impulsion` lance l'éditeur et le pont Claude ensemble. Ctrl+C arrête les deux.
+
+Ouvre ensuite **http://localhost:3456** dans Chrome. Utilise toujours cette adresse exacte : tes projets et tes médias sont rangés dans le navigateur pour cette adresse, et une autre (`127.0.0.1`, un autre port) les ferait « disparaître ».
+
+### Parler à Claude
+
+Deux façons, au choix :
+
+- **Le panneau de chat de l'éditeur** : il marche dès que Claude Code est installé et connecté.
+- **Claude Code dans un terminal** : lance `claude` depuis le dossier `opencut-impulsion` et accepte le serveur `opencut` qu'il te propose. Pour l'avoir depuis n'importe quel dossier :
+
+  ```sh
+  claude mcp add-json -s user opencut '{"type":"http","url":"http://127.0.0.1:3457/mcp","timeout":1800000}'
+  ```
+
+Dans les deux cas, l'éditeur doit être lancé et ouvert dans Chrome : Claude agit à travers cet onglet.
+
+### Tes dossiers de vidéos
+
+Claude peut importer des fichiers depuis `~/Movies`, `~/Downloads`, `~/Desktop` et les disques externes, et les exports arrivent dans `~/impulsion/videos/exports`. Pour changer ces dossiers, crée `~/.config/opencut-impulsion/config.json` :
+
+```json
+{
+	"allowedRoots": ["~/Movies", "~/Mes rushes"],
+	"exportsDir": "~/Movies/exports"
+}
+```
+
+Tous les réglages et le dépannage sont dans [`apps/bridge/README.md`](apps/bridge/README.md), l'architecture dans [`docs/impulsion-architecture.md`](docs/impulsion-architecture.md).
+
+---
+
 # OpenCut (Legacy)
 
-This is the original OpenCut codebase. It's archived and no longer maintained.
-
-The rewrite is happening at [opencut-app/opencut](https://github.com/opencut-app/opencut).
+The rest of this file is the upstream README. The original codebase is archived; its rewrite is happening at [opencut-app/opencut](https://github.com/opencut-app/opencut).
 
 ## Sponsors
 

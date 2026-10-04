@@ -36,7 +36,7 @@ import { registerToolsOnServer, type ToolRegistry } from "./tools";
 import { BRIDGE_VERSION, MCP_SERVER_NAME } from "./version";
 
 // Backend of the in-app chat panel. One ChatSession per sessionKey: a long-lived Agent SDK query() fed by an async
-// prompt queue, spawning Sebastien's own `claude` binary on his Max subscription (never an API key: the child gets
+// prompt queue, spawning the user's own `claude` binary on their Claude subscription (never an API key: the child gets
 // an allow-listed environment, so no key, token or provider variable reaches it). The editor tools come from the
 // same registry as /mcp, registered on an in-process SDK MCP server. Every SDK message is projected to ChatEvents.
 

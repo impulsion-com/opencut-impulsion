@@ -1,6 +1,6 @@
 # OpenCut Impulsion fork - architecture map
 
-Repo: `/Users/sebastienrech/impulsion/opencut`, branch `impulsion` (HEAD `cf5e79e9`, OpenCut classic, archived upstream, MIT). All paths below are relative to that root unless absolute. Dev server: `next dev --turbopack -p 3456`, reachable at `http://localhost:3456`.
+Repo: `~/impulsion/opencut`, branch `impulsion` (HEAD `cf5e79e9`, OpenCut classic, archived upstream, MIT). All paths below are relative to that root unless absolute. Dev server: `next dev --turbopack -p 3456`, reachable at `http://localhost:3456`.
 
 This map merges eight parallel reader reports. Wherever the readers disagreed, the code was re-read (read-only) and the finding marked **verified** is what the code says. Section 11.3 lists the contradictions that were resolved this way.
 
@@ -12,11 +12,11 @@ This map merges eight parallel reader reports. Wherever the readers disagreed, t
 - **Consequence:** Claude can only act through the open editor tab. Node cannot read the project state, and a headless browser would not see the user's Chrome profile.
 - **Recommended topology:**
   - One local sidecar Node process, `apps/bridge`, bound to `127.0.0.1:3457`.
-  - It hosts (a) a WebSocket hub the editor tab connects to, (b) a Streamable-HTTP MCP endpoint `/mcp` shared by every Claude Code CLI session, (c) the chat backend for the in-app panel, which calls `@anthropic-ai/claude-agent-sdk` `query()` against the installed `claude` binary on Sebastien's Max subscription, (d) `/files` to serve disk media and `/exports` to receive rendered files, and (e) a warm Python worker for WhisperX and the other Impulsion scripts.
+  - It hosts (a) a WebSocket hub the editor tab connects to, (b) a Streamable-HTTP MCP endpoint `/mcp` shared by every Claude Code CLI session, (c) the chat backend for the in-app panel, which calls `@anthropic-ai/claude-agent-sdk` `query()` against the installed `claude` binary on the user's Max subscription, (d) `/files` to serve disk media and `/exports` to receive rendered files, and (e) a warm Python worker for WhisperX and the other Impulsion scripts.
   - Tool handlers are written once. In the tab they run against `EditorCore`: each mutating tool is one `BatchCommand`, so it is one Cmd+Z.
 - **Chat panel:** a fourth, collapsible column on the right of `EditorLayout` (`apps/web/src/app/editor/[project_id]/page.tsx`), toggled from `EditorHeader`. Chat state lives in a zustand store.
 - **AI edits** go through Command classes, never `invokeAction` (stale React closures) and never raw `timeline.updateTracks` (no undo). Ripple is pinned off while an AI edit runs, and multi-track cuts are computed explicitly.
-- **Transcription:** replace the in-browser, segment-level Whisper with Sebastien's WhisperX large-v3-turbo plus French wav2vec2 alignment (`plan.transcribe_x`). Store transcripts per `mediaId` in source seconds and project them through the timeline. Text-based cuts become a pure `removeTimeRanges(tracks, ranges)` applied with one `TracksSnapshotCommand`.
+- **Transcription:** replace the in-browser, segment-level Whisper with the user's WhisperX large-v3-turbo plus French wav2vec2 alignment (`plan.transcribe_x`). Store transcripts per `mediaId` in source seconds and project them through the timeline. Text-based cuts become a pure `removeTimeRanges(tracks, ranges)` applied with one `TracksSnapshotCommand`.
 
 Suggested build order:
 1. Clean the shell (section 6) and fix the upstream bugs listed in 6.3.
@@ -283,7 +283,7 @@ It returns `ProcessedMediaAsset = Omit<MediaAsset,"id">`. The result then goes t
 ### 4.2 Getting a disk file into the tab (recommendation)
 
 Phase 1, zero editor refactor:
-1. The sidecar serves `GET /files?path=<abs>` with Content-Type, Content-Length and Range. It is restricted to allow-listed roots (for example `/Users/sebastienrech/impulsion/videos`) and sends CORS for `http://localhost:3456` only.
+1. The sidecar serves `GET /files?path=<abs>` with Content-Type, Content-Length and Range. It is restricted to allow-listed roots (for example `~/impulsion/videos`) and sends CORS for `http://localhost:3456` only.
 2. The tab runs `res = await fetch(url)`, then `new File([await res.blob()], basename, {type})`, then `processMediaAssets`, then `runAiEdit([AddMediaAssetCommand, InsertElementCommand?])`.
 3. The tab reports back `{assetId, duration, width, height, fps, hasAudio, canDecode}`.
 4. The sidecar records `mediaId -> absolute path + sha1` in a per-project index (for example `~/.opencut-impulsion/<projectId>/media-index.json`). The Python tools need real paths; OPFS has none.
@@ -348,7 +348,7 @@ Media imported through the UI (drag and drop) has no known path. For those asset
 
 1. **Transcription backend.**
    - Add a warm Python worker managed by the sidecar. Spawn `/usr/local/bin/python3` with `SSL_CERT_FILE` set from certifi, speaking JSON lines over stdio.
-   - It imports `transcribe_x` from `/Users/sebastienrech/impulsion/montage-video/reel-remotion/plan.py` (WhisperX large-v3-turbo, CPU int8, wav2vec2 French alignment, `trim_ends` energy snapping) and `engine.apply_replacements`.
+   - It imports `transcribe_x` from `~/impulsion/montage-video/reel-remotion/plan.py` (WhisperX large-v3-turbo, CPU int8, wav2vec2 French alignment, `trim_ends` energy snapping) and `engine.apply_replacements`.
    - Cache results by content sha1. Stream progress to the chat panel.
    - Cost: roughly 0.3x realtime on CPU, so run it as a job.
    - Input: the absolute path from the media index, or the uploaded OPFS `File`.
@@ -366,7 +366,7 @@ Media imported through the UI (drag and drop) has no known path. For those asset
 6. **Review flow.**
    - `find_take_mistakes` and `tighten_pauses` only **propose** ranges `[{s,e,why}]`.
    - `mark_ranges` shows them as ranged bookmarks (`ToggleBookmarkCommand` plus `UpdateBookmarkCommand`).
-   - Sebastien validates in chat, then `cut_ranges` applies them. Take cuts are never applied automatically.
+   - the user validates in chat, then `cut_ranges` applies them. Take cuts are never applied automatically.
 
 Browser fallback: `transcriptionService` with `modelId: "whisper-large-v3-turbo"` and `language: "fr"`. Word timestamps in the browser would need `return_timestamps: "word"` and an ONNX export with `alignment_heads`. Not verified.
 
@@ -404,7 +404,7 @@ Bind locally. Today the process listens on `*:3456` (all interfaces, verified wi
 - **Migration runner does nothing.** `apps/web/src/services/storage/migrations/runner.ts:41-45` and `:98`, and `v1-to-v2.ts:124-137, 160-164`, still use the positional `new IndexedDBAdapter(db, store, 1)` and `set(key, value)`. The runner opens an IndexedDB database named "undefined" and migrates nothing. These are also TS2554 errors that fail `next build`.
 - **fps and hasAudio not persisted.** `StorageService.saveMediaAsset` (~297) and `loadMediaAsset` (~370) drop them, so after a reload a silent video reports audio.
 - **fps rounded.** `apps/web/src/media/processing.ts:141` applies `Math.round(fps)`, so 29.97 becomes 30 and NTSC rates are never reached.
-- **AZERTY shortcuts.** `getPressedKey` (`apps/web/src/actions/keybindings-store.ts:234`) maps letters by `ev.code` (physical QWERTY position). On Sebastien's French layout, Cmd+Z does not trigger undo, and the key that does trigger undo is the one Chrome uses for Cmd+W (close tab). Cmd+A has the same problem with Cmd+Q. Prefer `ev.key` for single a-z letters.
+- **AZERTY shortcuts.** `getPressedKey` (`apps/web/src/actions/keybindings-store.ts:234`) maps letters by `ev.code` (physical QWERTY position). On the user's French layout, Cmd+Z does not trigger undo, and the key that does trigger undo is the one Chrome uses for Cmd+W (close tab). Cmd+A has the same problem with Cmd+Q. Prefer `ev.key` for single a-z letters.
 - **Build blockers.** `apps/web/src/actions/keybindings/persistence.ts` imports `isShortcutKey` and `isActionWithOptionalArgs`, which exist nowhere. `apps/web/src/stickers/providers/index.ts:22` has a TS2554.
 - **History survives project switches.** `CommandManager.clear()` is never called; add it to `loadProject`.
 
@@ -441,7 +441,7 @@ Panel UX mapping from `SDKMessage`:
 
 - Node 22 (`~/.local/bin/node` v22.23.2) running `tsx`, bound to `127.0.0.1:3457`.
 - Dependencies: `@modelcontextprotocol/sdk@1.30.x` (stay on v1: the Agent SDK has a peer dependency on `^1.29`, and v2 renamed the API), `@anthropic-ai/claude-agent-sdk@0.3.x` (0.3.282 verified in the scratchpad), `ws@8`, `zod@4`, express via `createMcpExpressApp({host: "127.0.0.1"})` from `@modelcontextprotocol/sdk/server/express.js` (this turns on DNS-rebinding protection).
-- Install with optional dependencies omitted and set `pathToClaudeCodeExecutable: "/Users/sebastienrech/.local/bin/claude"` (CLI 2.1.280). This avoids the bundled 222 MB binary and keeps one Claude Code version.
+- Install with optional dependencies omitted and set `pathToClaudeCodeExecutable: "~/.local/bin/claude"` (CLI 2.1.280). This avoids the bundled 222 MB binary and keeps one Claude Code version.
 - Start it next to Next (for example a root script `dev:impulsion` using `concurrently`).
 - Why a separate process: Next route handlers cannot accept WebSocket upgrades, HMR resets module state, and Turbopack breaks the SDK's binary resolution.
 
@@ -460,8 +460,8 @@ Panel UX mapping from `SDKMessage`:
 
 ### 8.3 MCP for Claude Code (the CLI)
 
-- Transport: stateful Streamable HTTP at `/mcp`. Per session: `new StreamableHTTPServerTransport({sessionIdGenerator: randomUUID, onsessioninitialized})`, `new McpServer({name:"opencut", version}, {instructions: EDITOR_RULES})`, `registerEditorTools(server, hub)`, `server.connect(transport)`. The precedent is `/Users/sebastienrech/impulsion/mcp-impulsion/src/lib/mcp/server.ts`.
-- Why not stdio: every CLI session would spawn its own server, and they would fight over the port and the tab. Sebastien runs parallel sessions.
+- Transport: stateful Streamable HTTP at `/mcp`. Per session: `new StreamableHTTPServerTransport({sessionIdGenerator: randomUUID, onsessioninitialized})`, `new McpServer({name:"opencut", version}, {instructions: EDITOR_RULES})`, `registerEditorTools(server, hub)`, `server.connect(transport)`. The precedent is `~/impulsion/mcp-impulsion/src/lib/mcp/server.ts`.
+- Why not stdio: every CLI session would spawn its own server, and they would fight over the port and the tab. The user runs parallel sessions.
 - Registration (user scope is per profile, so do both):
 
   ```
@@ -477,8 +477,8 @@ Panel UX mapping from `SDKMessage`:
 
 ```ts
 query({ prompt: pushQueue /* AsyncIterable<SDKUserMessage>, one long-lived query per chat session */, options: {
-  pathToClaudeCodeExecutable: "/Users/sebastienrech/.local/bin/claude",
-  cwd: "/Users/sebastienrech/impulsion/opencut",
+  pathToClaudeCodeExecutable: "~/.local/bin/claude",
+  cwd: "~/impulsion/opencut",
   env: { ...envWithout("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"), CLAUDE_CONFIG_DIR: profileDir }, // env REPLACES process.env
   model: "claude-opus-5",                       // see 8.6
   thinking: { type: "adaptive", display: "summarized" }, effort: "high",
@@ -491,9 +491,9 @@ query({ prompt: pushQueue /* AsyncIterable<SDKUserMessage>, one long-lived query
 ```
 
 - **Auth:** the spawned binary resolves credentials the way the CLI does: `ANTHROPIC_API_KEY`, then `apiKeySource` helpers, then the claude.ai OAuth login in the keychain for `$CLAUDE_CONFIG_DIR`. A smoke test in the scratchpad (`sdktest/test.mjs`) got `system/init` with `apiKeySource: "none"`, meaning the subscription was used. A `[image, text]` MCP tool result reached the model, and `resume` worked. **Strip the API key env vars**, and warn in the UI whenever `apiKeySource !== "none"`.
-- **Profiles:** A (`~/.claude`, sebastien@, Max 20x) and B (`~/.claude-b`, contact@, Max 5x) can both be logged in. Offer a switch, since chat usage draws on the same quota as daily Claude Code work.
+- **Profiles:** A (`~/.claude`) and B (`~/.claude-b`, optional second account) can both be logged in. Offer a switch, since chat usage draws on the same quota as daily Claude Code work.
 - **Tool registry:** the definitions live in `packages/claude-tools` and are registered twice with `server.registerTool(tool.name, toMcpToolConfig(tool), handler)`: on the HTTP `McpServer` for the CLI, and on `createSdkMcpServer({name, instructions: EDITOR_RULES, tools: []}).instance` for the chat. Never pass `input.shape` or use the SDK's `tool()` helper (shape only): that drops the strict top-level schema and silently strips misspelled keys. Both handlers call `hub.call`. In Claude Code the tools appear as `mcp__opencut__<name>`.
-- **Policy:** this is a personal, local, single-user tool driving Sebastien's own Claude Code login. Never deploy it and never share it with the team.
+- **Policy:** this is a local, single-user tool driving the user's own Claude Code login. Never deploy it on a server and never share one running instance between people: everyone installs their own copy and signs in with their own account.
 
 ### 8.5 Images
 
@@ -504,7 +504,7 @@ A tool returns `{content: [{type:"image", data: <base64>, mimeType: "image/jpeg"
 ### 8.6 Models (current IDs)
 
 - Default for the chat: `claude-opus-5`, pinned explicitly with adaptive thinking.
-- Sebastien may choose `claude-sonnet-5` for faster, cheaper chat turns (his call, not a default), or `claude-haiku-4-5` for bulk sub-tasks.
+- the user may choose `claude-sonnet-5` for faster, cheaper chat turns (his call, not a default), or `claude-haiku-4-5` for bulk sub-tasks.
 - `claude-fable-5-1` is the most capable model but likely draws on usage credits.
 - `claude-opus-5-5` is launching; use it only when named. It is the CLI default in this session, so omitting `model` in the SDK would inherit it.
 
@@ -603,20 +603,20 @@ Environment facts:
 
 | Capability | Code (verified to exist) | Entry | Wrap as |
 |---|---|---|---|
-| Word timestamps, WhisperX with French alignment and energy-trimmed ends | `/Users/sebastienrech/impulsion/montage-video/reel-remotion/plan.py` | `transcribe_x(src, work, language="fr")` returns `[{w,s,e}]` in source seconds, cached in `work/words_x.json` | `transcribe_media` (accurate) |
-| Faster, rougher words | `/Users/sebastienrech/impulsion/montage-video/reel-facecam/engine.py` | `transcribe(src, work, language)`, `apply_replacements(words, pairs)`, `norm(s)` | `transcribe_media` (fast), transcript corrections |
+| Word timestamps, WhisperX with French alignment and energy-trimmed ends | `~/impulsion/montage-video/reel-remotion/plan.py` | `transcribe_x(src, work, language="fr")` returns `[{w,s,e}]` in source seconds, cached in `work/words_x.json` | `transcribe_media` (accurate) |
+| Faster, rougher words | `~/impulsion/montage-video/reel-facecam/engine.py` | `transcribe(src, work, language)`, `apply_replacements(words, pairs)`, `norm(s)` | `transcribe_media` (fast), transcript corrections |
 | Pause tightening | plan.py | `tighten(words, base, dur, gap_cut=0.35)` returns keep ranges; the podcast variant is in `plan_multicam.py` lines 39-60 | `tighten_pauses` |
 | Source to output mapping | engine.py | `build_map(keep)`, `to_out(t, mapping)`, `map_words(words, mapping)` | Only needed for Remotion export; OpenCut projects through element trims instead |
 | Caption cards (French linking-word rules) | engine.py | `auto_cards(words, keywords, max_words=3, max_chars=22, pause=0.28, phrase_pause=0.45)`, `layout_cards(cards, mapping_end, max_lines=3)` | `buildCaptionChunksFromWords` port, `add_captions` |
 | Faces (OpenCV Haar, cached `faces.json`) | engine.py | `detect_faces(src, mapping, work, crop_box, size=(540,960))`; punch = `min(1.24, max(1.06, 1.22-(face_h-0.15)*0.7))` | `face_zoom_punch_ins`, which writes `transform.scaleX/Y` keyframes plus compensating `transform.positionX/Y` (there is no transform-origin) |
 | SFX with the peak landing 2 frames early; BANNED list | plan.py `sfx_at(kind, event_ms)`, `sfx/catalog.json` (100 CC0 sounds) | Drop or re-measure the 45 ms Remotion latency offset | `place_sfx`: `/files` import, then audio elements on an "sfx" track with `volume` in dB |
-| Person cutout (Apple Vision) | `/Users/sebastienrech/impulsion/montage-video/reel-remotion/personmask` | `personmask <in_dir> <out_dir> [accurate\|balanced\|fast]`; `plan.person_frames(...)`; `plan.fetch_broll(...)` | `broll_behind_person` (heavy: about 110 MB of PNG per second, purge afterwards) |
+| Person cutout (Apple Vision) | `~/impulsion/montage-video/reel-remotion/personmask` | `personmask <in_dir> <out_dir> [accurate\|balanced\|fast]`; `plan.person_frames(...)`; `plan.fetch_broll(...)` | `broll_behind_person` (heavy: about 110 MB of PNG per second, purge afterwards) |
 | Full reel render (karaoke, zoom, overlays) | plan.py `run(cfg, mode)`, `render.mjs` (`node render.mjs plan.json out.mp4 [--crf 17] [--still ms]`) | Remotion composition typed by `src/types.ts` (zod `ReelPropsSchema`) | `render_with_remotion_engine`: editor state to CONFIG, render, re-import the MP4 |
-| Podcast: speakers from mic ratio, retakes, asides, stutters | `/Users/sebastienrech/impulsion/videos/podcast-imp-ep1/work/analyse.py` | cwd-relative, OFF=1.124 hardcoded | Parametrise, then `attribute_speakers_by_mic` and `find_take_mistakes` |
+| Podcast: speakers from mic ratio, retakes, asides, stutters | `~/impulsion/videos/podcast-imp-ep1/work/analyse.py` | cwd-relative, OFF=1.124 hardcoded | Parametrise, then `attribute_speakers_by_mic` and `find_take_mistakes` |
 | Podcast autopod camera plan | `.../work/plan_multicam.py` (drop the VectCut `build` part) | Rules: MIN_SHOT 2.2 s, D_MIN_SOLO 1.6 s, SHORT_TURN 4 s, INTRO/OUTRO 10 s, SNAP_CUT 1.2 s, ZOOM_CUT 1.08 | `plan_multicam_autopod`: two video tracks, 2-shot via 50% `rectangle`/`split` masks |
 | Camera sync | none committed (the offset was computed ad hoc) | New: 16 kHz envelopes plus `scipy.signal.correlate` on 3 windows | `sync_cameras_by_audio` |
 | Voice chain and QA | plan.py / `regles-montage.md` | highpass 80 Hz, `loudnorm I=-14 TP=-1.5 LRA=9`, alimiter; ebur128, blackdetect, tile contact sheet, re-transcribe and diff | `voice_master_and_qa` (runs on the exported file) |
-| Timecoded review | `/Users/sebastienrech/impulsion/outils/review-video/server.mjs` (port 4602) | `/api/retours` | `apply_review_feedback`; later replaced by OpenCut ranged bookmarks |
+| Timecoded review | `~/impulsion/outils/review-video/server.mjs` (port 4602) | `/api/retours` | `apply_review_feedback`; later replaced by OpenCut ranged bookmarks |
 | Editing rules and taste | `~/.claude/skills/reel-facecam/SKILL.md`, `reference/regles-montage.md`, `reference/grammaire-hook.md` | | Load them into `EDITOR_PROMPT_FR` and the MCP `instructions` |
 
 Taste defaults the tools must encode:
@@ -648,12 +648,12 @@ The CapCut MCP (`mcp__capcut__*`) is superseded: no absolute placement, no trans
 | Large media: double copy on import; `waveform-cache/service.ts:64` runs `arrayBuffer()` on whole files; the export audio mix decodes whole sources; `BufferTarget` holds the full output in RAM | Phase 2 streaming or linked media and `StreamTarget`; proxies for 4K HEVC (`canDecode` false breaks preview and export) |
 | Long jobs exceed MCP timeouts; WhisperX runs on CPU | Job pattern, content-hash caching, warm Python worker |
 | Quota contention: chat turns use the same Max pool as daily Claude Code work | Profile switch A/B, `rate_limit_event` badge, effort control |
-| Tab lifecycle: none, several, wrong project, background tab (rAF paused) | hello/projectId checks, latest tab wins, clear `isError` text asking Sebastien to open the editor |
+| Tab lifecycle: none, several, wrong project, background tab (rAF paused) | hello/projectId checks, latest tab wins, clear `isError` text asking the user to open the editor |
 | Renderer limits: no stroke, shadow or per-word colour; blur is the only effect; Google Fonts over the network; no local Rust toolchain | Remotion path for signature reels; custom font `@font-face` branch in `apps/web/src/fonts/google-fonts.ts`; TypeScript-side extensions only |
 | Stale-frame suspicion: the texture cache is keyed on pooled canvas identity (PLAUSIBLE, not reproduced) | Test a 3x retime clip or a 60 fps source in a 20 fps project before trusting speed-ramped exports |
 | History never cleared across projects, no labels | Add `clear()` in `loadProject`, labels on commands |
 
-### 11.2 Open questions for Sebastien
+### 11.2 Open questions for the user
 
 1. **Media model:** copy into OPFS (simple, disk-hungry), linked `~/impulsion/videos` handles (zero-copy, needs a one-time permission and a schema field), or proxies for 4K HEVC rushes?
 2. **Undo granularity:** one Cmd+Z per tool call (recommended, simple) or per whole Claude turn (needs a transaction held open across async tool calls)?

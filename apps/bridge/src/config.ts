@@ -163,6 +163,11 @@ export function loadConfig({
 	}
 
 	applyEnv({ config, env, home });
+	// A default binary path that does not exist on this machine falls back to the same binary found on PATH
+	// (Intel Homebrew, npm-installed claude...). Paths set in the file or the environment were resolved above.
+	config.claudePath = findBinary({ preferred: config.claudePath, env });
+	config.ffprobePath = findBinary({ preferred: config.ffprobePath, env });
+	config.ffmpegPath = findBinary({ preferred: config.ffmpegPath, env });
 	config.allowedRoots = dedupe(config.allowedRoots);
 	return config;
 }
@@ -261,6 +266,26 @@ function applyEnv({
 		}
 		config.logLevel = level as BridgeConfig["logLevel"];
 	}
+}
+
+function findBinary({
+	preferred,
+	env,
+}: {
+	preferred: string;
+	env: NodeJS.ProcessEnv;
+}): string {
+	if (existsSync(preferred)) return preferred;
+	const name = path.basename(preferred);
+	const suffixes = process.platform === "win32" ? [".exe", ".cmd", ""] : [""];
+	for (const dir of (env.PATH ?? "").split(path.delimiter)) {
+		if (dir.trim() === "") continue;
+		for (const suffix of suffixes) {
+			const candidate = path.join(dir, name + suffix);
+			if (existsSync(candidate)) return candidate;
+		}
+	}
+	return preferred;
 }
 
 function dedupe(values: string[]): string[] {

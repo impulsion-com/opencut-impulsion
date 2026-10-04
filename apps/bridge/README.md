@@ -57,7 +57,7 @@ Sans onglet connecté, les outils de l'éditeur répondent proprement `EDITOR_NO
 Chaque fil de discussion (`sessionKey`, choisi par le panneau) a sa propre session Agent SDK de longue durée, qui lance le binaire `claude` installé (`~/.local/bin/claude`, jamais le binaire embarqué du SDK) :
 
 - **Abonnement, pas d'API** : le processus lancé ne reçoit qu'une liste blanche de variables (`HOME`, `PATH`, `LANG`, `LC_*`, proxy...). Ni clé (`ANTHROPIC_*`, `OPENAI_API_KEY`, jeton 1Password...), ni variable qui change de compte ou de fournisseur (`CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`...), ni variable d'une session Claude Code qui aurait lancé le sidecar ne passe ; celles qui changeraient de compte sont signalées au démarrage. Si `system/init` indique malgré tout une autre source que `none`, le panneau reçoit un avertissement en français.
-- **Profils** : A (`~/.claude`, sebastien@) et B (`~/.claude-b`, contact@). Changer de profil relance la session et reprend la même conversation dans l'autre profil (la transcription est copiée si besoin).
+- **Profils** : A (`~/.claude`, le compte par défaut) et B (`~/.claude-b`, un second compte facultatif). Changer de profil relance la session et reprend la même conversation dans l'autre profil (la transcription est copiée si besoin).
 - **Modèles** : ceux de `CHAT_MODELS` (Opus 5.5 par défaut). Un changement de modèle s'applique à la session en cours, sans la relancer.
 - **Outils** : uniquement les outils opencut (`tools: []`, `strictMcpConfig`, `settingSources: []` : ni tes réglages, ni tes autres serveurs MCP). Les outils destructifs (aujourd'hui `remove_media`) déclenchent un `permission_request` dans le panneau et attendent la réponse ; sans réponse au bout de 5 minutes, l'action est refusée.
 - **Reprise** : après un redémarrage du sidecar, le panneau renvoie `resumeSessionId` (reçu dans `turn_end`) et la conversation reprend. Si elle est introuvable, une nouvelle conversation démarre et le message est renvoyé.
@@ -113,7 +113,6 @@ Outil personnel, local et mono-utilisateur, qui pilote ta propre connexion Claud
 ## Tests
 
 ```sh
-cd /Users/sebastienrech/impulsion/opencut
 bun test apps/bridge                                  # hub, fichiers, exports, chat, registre, serveur
 bunx tsc --noEmit -p apps/bridge/tsconfig.json
 ```

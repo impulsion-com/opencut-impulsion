@@ -40,8 +40,8 @@ import { closeClaudePanel } from "../panel-toggle-store";
 import { chatStore, useChat, useConversation } from "../use-chat";
 
 export const PROFILE_LABELS: Record<ChatProfile, string> = {
-	A: "Profil A (sebastien@)",
-	B: "Profil B (contact@)",
+	A: "Profil A (~/.claude)",
+	B: "Profil B (~/.claude-b)",
 };
 
 function isChatProfile(value: string): value is ChatProfile {

@@ -2,7 +2,7 @@
 // Keep it compact: it is sent with every request. Never put an em dash in here.
 
 /** English rules for any Claude driving the editor (MCP instructions and chat system prompt). */
-export const EDITOR_RULES = `You drive OpenCut, a local browser video editor, through the opencut tools. The user (Sebastien) watches the editor while you work.
+export const EDITOR_RULES = `You drive OpenCut, a local browser video editor, through the opencut tools. The user watches the editor while you work.
 
 Units and ids
 - Every time is in SECONDS (up to 3 decimals). Timeline times are absolute; keyframe times are relative to the element start.
